@@ -16,7 +16,7 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\badbool.frag"
+    filename = r"pp1-post\samples\reserve_op.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
