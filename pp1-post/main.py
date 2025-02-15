@@ -19,10 +19,11 @@ OPERATORS = {
     "{": "{", "}": "}", "(": "(", ")": ")"
 }
 
-# **Updated Number Patterns**
-HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")  # Matches hexadecimal numbers
-INT_PATTERN = re.compile(r"\b\d+\b")  # Matches decimal integers
-DOUBLE_PATTERN = re.compile(r"\b\d+\.\d*(E[+-]?\d+)?\b", re.IGNORECASE)  # Supports exponent notation
+# **Updated Number & String Patterns**
+HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")  # Hexadecimal numbers
+INT_PATTERN = re.compile(r"\b\d+\b")  # Decimal integers
+DOUBLE_PATTERN = re.compile(r"\b\d+\.\d*(E[+-]?\d+)?\b", re.IGNORECASE)  # Floating-point numbers
+STRING_PATTERN = re.compile(r'"([^"\n]*)"')  # Matches string constants (no newlines)
 
 def scan(source_code):
     tokens = []
@@ -33,7 +34,16 @@ def scan(source_code):
     for line_num, line in enumerate(lines, start=1):
         column = 0
         while column < len(line):
-            # Match Hexadecimal Constants First
+            # Match String Constants First
+            string_match = STRING_PATTERN.match(line, column)
+            if string_match:
+                lexeme = string_match.group(0)  # Keep full `"string"` including quotes
+                value = lexeme  # Preserve the original string format with quotes
+                tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_StringConstant", value))
+                column += len(lexeme)
+                continue
+
+            # Match Hexadecimal Constants
             hex_match = HEX_PATTERN.match(line, column)
             if hex_match:
                 lexeme = hex_match.group(0)
@@ -64,7 +74,7 @@ def scan(source_code):
                 column += len(lexeme)
                 continue
 
-            # Match Operators & Punctuation First
+            # Match Operators & Punctuation
             op_match = operator_pattern.match(line, column)
             if op_match:
                 op = op_match.group(0)
@@ -97,7 +107,7 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\number.frag"
+    filename = r"pp1-post\samples\string.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
