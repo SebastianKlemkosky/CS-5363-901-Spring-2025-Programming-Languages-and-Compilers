@@ -1,6 +1,6 @@
 import re
 
-# Reserved keywords (Renamed to match expected output)
+# Reserved keywords
 KEYWORDS = {
     "void": "T_Void", "int": "T_Int", "double": "T_Double", "bool": "T_Bool", "string": "T_String",
     "null": "T_Null", "for": "T_For", "while": "T_While", "if": "T_If", "else": "T_Else",
@@ -11,13 +11,18 @@ KEYWORDS = {
 # Boolean Constants
 BOOLEAN_CONSTANTS = {"true", "false"}
 
-# Operators & Punctuation (Renamed to match expected output)
+# Operators & Punctuation
 OPERATORS = {
     "||": "T_Or", "<=": "T_LessEqual", ">=": "T_GreaterEqual", "==": "T_Equal",
     "+": "+", "-": "-", "*": "*", "/": "/",
     "<": "<", ">": ">", "=": "=", ";": ";", ",": ",", "!": "!",
     "{": "{", "}": "}", "(": "(", ")": ")"
 }
+
+# **Updated Number Patterns**
+HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")  # Matches hexadecimal numbers
+INT_PATTERN = re.compile(r"\b\d+\b")  # Matches decimal integers
+DOUBLE_PATTERN = re.compile(r"\b\d+\.\d*(E[+-]?\d+)?\b", re.IGNORECASE)  # Supports exponent notation
 
 def scan(source_code):
     tokens = []
@@ -28,11 +33,42 @@ def scan(source_code):
     for line_num, line in enumerate(lines, start=1):
         column = 0
         while column < len(line):
+            # Match Hexadecimal Constants First
+            hex_match = HEX_PATTERN.match(line, column)
+            if hex_match:
+                lexeme = hex_match.group(0)
+                value = int(lexeme, 16)  # Convert hex to integer value
+                tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_HexConstant", value))
+                column += len(lexeme)
+                continue
+
+            # Match Numbers (Doubles first, then Integers)
+            double_match = DOUBLE_PATTERN.match(line, column)
+            if double_match:
+                lexeme = double_match.group(0)
+                value = float(lexeme)  # Convert scientific notation to actual float value
+                
+                # Convert to int if there's no decimal component (e.g., 1220.0 -> 1220)
+                if value.is_integer():
+                    value = int(value)
+
+                tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_DoubleConstant", value))
+                column += len(lexeme)
+                continue
+
+            int_match = INT_PATTERN.match(line, column)
+            if int_match:
+                lexeme = int_match.group(0)
+                value = int(lexeme)  # Convert integer to remove leading zeros
+                tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_IntConstant", value))
+                column += len(lexeme)
+                continue
+
             # Match Operators & Punctuation First
             op_match = operator_pattern.match(line, column)
             if op_match:
                 op = op_match.group(0)
-                token_type = OPERATORS.get(op, "Unknown")  # Use symbol directly if not in OPERATORS
+                token_type = OPERATORS.get(op, "Unknown")
 
                 # Add quotes only for single-character symbols
                 if len(op) == 1:
@@ -61,7 +97,7 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\reserve_op.frag"
+    filename = r"pp1-post\samples\number.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
