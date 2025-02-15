@@ -1,25 +1,63 @@
-import sys
 import re
 
-BOOLEAN_CONSTANTS = {"true": "T_BoolConstant", "false": "T_BoolConstant"}
-KEYWORDS = {"void": "T_Void", "int": "T_Int", "double": "T_Double", "bool": "T_Bool", "string": "T_String", "null": "T_Null", "for": "T_For", "while": "T_While", "if": "T_If", "else": "T_Else", "return": "T_Return", "break": "T_Break", "Print": "T_Print", "ReadInteger": "T_ReadInteger", "ReadLine": "T_ReadLine"}
+# Reserved keywords (Renamed to match expected output)
+KEYWORDS = {
+    "void": "T_Void", "int": "T_Int", "double": "T_Double", "bool": "T_Bool", "string": "T_String",
+    "null": "T_Null", "for": "T_For", "while": "T_While", "if": "T_If", "else": "T_Else",
+    "return": "T_Return", "break": "T_Break", "Print": "T_Print", "ReadInteger": "T_ReadInteger",
+    "ReadLine": "T_ReadLine"
+}
 
-TOKEN_PATTERN = re.compile(r"\b(true|false)\b|\b(void|int|double|bool|string|null|for|while|if|else|return|break|Print|ReadInteger|ReadLine)\b|\b\w+\b")
+# Boolean Constants
+BOOLEAN_CONSTANTS = {"true", "false"}
+
+# Operators & Punctuation (Renamed to match expected output)
+OPERATORS = {
+    "||": "T_Or", "<=": "T_LessEqual", ">=": "T_GreaterEqual", "==": "T_Equal",
+    "+": "+", "-": "-", "*": "*", "/": "/",
+    "<": "<", ">": ">", "=": "=", ";": ";", ",": ",", "!": "!",
+    "{": "{", "}": "}", "(": "(", ")": ")"
+}
 
 def scan(source_code):
     tokens = []
-    for line_num, line in enumerate(source_code.splitlines(), start=1):
-        for match in TOKEN_PATTERN.finditer(line):
-            word = match.group()
-            if word in BOOLEAN_CONSTANTS:
-                token_type = BOOLEAN_CONSTANTS[word]
-                tokens.append((word, line_num, match.start() + 1, match.end(), token_type, word))
+    identifier_pattern = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{0,30}")
+    operator_pattern = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
+
+    lines = source_code.split("\n")  # Process input line by line
+    for line_num, line in enumerate(lines, start=1):
+        column = 0
+        while column < len(line):
+            # Match Operators & Punctuation First
+            op_match = operator_pattern.match(line, column)
+            if op_match:
+                op = op_match.group(0)
+                token_type = OPERATORS.get(op, "Unknown")  # Use symbol directly if not in OPERATORS
+
+                # Add quotes only for single-character symbols
+                if len(op) == 1:
+                    token_type = f"'{token_type}'"
+
+                tokens.append((op, line_num, column + 1, column + len(op), token_type))
+                column += len(op)
                 continue
-            elif word in KEYWORDS:
-                token_type = KEYWORDS[word]
-            else:
-                token_type = "T_Identifier"
-            tokens.append((word, line_num, match.start() + 1, match.end(), token_type))
+            
+            # Match Identifiers, Keywords, and Boolean Constants
+            match = identifier_pattern.match(line, column)
+            if match:
+                lexeme = match.group(0)
+                if lexeme in BOOLEAN_CONSTANTS:
+                    tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_BoolConstant", lexeme))
+                elif lexeme in KEYWORDS:
+                    tokens.append((lexeme, line_num, column + 1, column + len(lexeme), KEYWORDS[lexeme]))
+                else:
+                    tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_Identifier"))
+                
+                column += len(lexeme)
+                continue
+            
+            column += 1  # Move to next character if no match
+
     return tokens
 
 def main():
