@@ -24,11 +24,17 @@ HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")  # Hexadecimal numbers
 INT_PATTERN = re.compile(r"\b\d+\b")  # Decimal integers
 DOUBLE_PATTERN = re.compile(r"\b\d+\.\d*(E[+-]?\d+)?\b", re.IGNORECASE)  # Floating-point numbers
 STRING_PATTERN = re.compile(r'"([^"\n]*)"')  # Matches string constants (no newlines)
+SINGLE_LINE_COMMENT = re.compile(r"//.*")  # Matches `//` comments
+MULTI_LINE_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)  # Matches `/* ... */` comments
 
 def scan(source_code):
     tokens = []
     identifier_pattern = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{0,30}")
     operator_pattern = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
+
+    # Replace comments with whitespace to preserve line numbers
+    source_code = re.sub(SINGLE_LINE_COMMENT, lambda m: " " * len(m.group(0)), source_code)  # Replace `//...`
+    source_code = re.sub(MULTI_LINE_COMMENT, lambda m: "\n" * m.group(0).count("\n"), source_code)  # Replace `/* ... */`
 
     lines = source_code.split("\n")  # Process input line by line
     for line_num, line in enumerate(lines, start=1):
@@ -37,8 +43,8 @@ def scan(source_code):
             # Match String Constants First
             string_match = STRING_PATTERN.match(line, column)
             if string_match:
-                lexeme = string_match.group(0)  # Keep full `"string"` including quotes
-                value = lexeme  # Preserve the original string format with quotes
+                lexeme = string_match.group(0)  # Keep full `"string"`
+                value = lexeme  # Preserve quotes
                 tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_StringConstant", value))
                 column += len(lexeme)
                 continue
@@ -56,11 +62,9 @@ def scan(source_code):
             double_match = DOUBLE_PATTERN.match(line, column)
             if double_match:
                 lexeme = double_match.group(0)
-                value = float(lexeme)  # Convert scientific notation to actual float value
-                
-                # Convert to int if there's no decimal component (e.g., 1220.0 -> 1220)
+                value = float(lexeme)
                 if value.is_integer():
-                    value = int(value)
+                    value = int(value)  # Convert to int if no decimal part
 
                 tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_DoubleConstant", value))
                 column += len(lexeme)
@@ -107,7 +111,7 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\string.frag"
+    filename = r"pp1-post\samples\comment.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
