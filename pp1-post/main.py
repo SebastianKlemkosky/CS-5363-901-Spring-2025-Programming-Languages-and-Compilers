@@ -23,11 +23,12 @@ OPERATORS = {
 HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")
 INT_PATTERN = re.compile(r"\b\d+\b")
 DOUBLE_PATTERN = re.compile(r"\b\d+\.\d*(E[+-]?\d+)?\b", re.IGNORECASE)
-STRING_PATTERN = re.compile(r'"([^"\n]*)"')
+STRING_PATTERN = re.compile(r'"([^"\\\n]*(\\.[^"\\\n]*)*)"')
 SINGLE_LINE_COMMENT = re.compile(r"//.*")
 MULTI_LINE_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 IDENTIFIER_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{0,30}")
 OPERATOR_PATTERN = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
+UNTERMINATED_STRING_PATTERN = re.compile(r'"[^"\n]*$')
 
 ### **Helper Functions**
 
@@ -38,11 +39,18 @@ def remove_comments(source_code):
     return source_code
 
 def match_string(line, column):
-    """Matches string constants."""
-    match = STRING_PATTERN.match(line, column)
+    """Matches valid and unterminated string constants."""
+    match = STRING_PATTERN.match(line, column)  # Check for valid strings
     if match:
         lexeme = match.group(0)
-        return lexeme, lexeme, len(lexeme)
+        return lexeme, "T_StringConstant", lexeme, len(lexeme)
+
+    # Check for unterminated strings
+    unterminated_match = UNTERMINATED_STRING_PATTERN.match(line, column)
+    if unterminated_match:
+        lexeme = unterminated_match.group(0)
+        return lexeme, "T_Error", "Unterminated string", len(lexeme)
+
     return None
 
 def match_number(line, column):
@@ -95,8 +103,12 @@ def scan(source_code):
             # Check for string constants
             result = match_string(line, column)
             if result:
-                lexeme, value, length = result
-                tokens.append((lexeme, line_num, column + 1, column + length, "T_StringConstant", value))
+                if len(result) == 3:  # Valid string
+                    lexeme, value, length = result
+                    tokens.append((lexeme, line_num, column + 1, column + length, "T_StringConstant", value))
+                elif len(result) == 4:  # Unterminated string
+                    lexeme, token_type, error_message, length = result
+                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, error_message))
                 column += length
                 continue
 
@@ -129,15 +141,19 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\reserve_op.frag"
+    filename = r"pp1-post\samples\string.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
             for token in tokens:
-                if len(token) == 6:
+                if token[4] == "T_Error":  # Unterminated string case
+                    print(f"\n*** Error line {token[1]}.")
+                    print(f"*** Unterminated string constant: {token[0]}\n")
+                elif len(token) == 6:
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
                 else:
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]}")
+
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
 
