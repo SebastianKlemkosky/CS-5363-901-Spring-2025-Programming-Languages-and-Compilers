@@ -13,10 +13,25 @@ BOOLEAN_CONSTANTS = {"true", "false"}
 
 # Operators & Punctuation
 OPERATORS = {
-    "||": "T_Or", "<=": "T_LessEqual", ">=": "T_GreaterEqual", "==": "T_Equal",
-    "+": "+", "-": "-", "*": "*", "/": "/",
-    "<": "<", ">": ">", "=": "=", ";": ";", ",": ",", "!": "!",
-    "{": "{", "}": "}", "(": "(", ")": ")"
+    "||": "T_Or", 
+    "<=": "T_LessEqual", 
+    ">=": "T_GreaterEqual", 
+    "==": "T_Equal",
+    "+": "'+'",  
+    "-": "'-'",  
+    "*": "'*'",  
+    "/": "'/'",  
+    "<": "'<'",  
+    ">": "'>'",  
+    "=": "'='",  
+    ";": "';'",  
+    ",": "','",  
+    "!": "'!'",  
+    "{": "'{'",  
+    "}": "'}'",  
+    "(": "'('",  
+    ")": "')'",  
+    ".": "'.'"  
 }
 
 # Regex Patterns
@@ -64,6 +79,11 @@ def match_number(line, column):
         if match:
             lexeme = match.group(0)
             value = converter(lexeme)
+
+            # Convert float to int if it has no decimal portion
+            if token_type == "T_DoubleConstant" and value.is_integer():
+                value = int(value)  # Remove unnecessary .0
+
             return lexeme, token_type, value, len(lexeme)
     return None
 
@@ -73,10 +93,9 @@ def match_operator(line, column):
     if match:
         lexeme = match.group(0)
         token_type = OPERATORS.get(lexeme, "Unknown")
-        if len(lexeme) == 1:
-            token_type = f"'{token_type}'"
         return lexeme, token_type, len(lexeme)
     return None
+
 
 def match_identifier(line, column):
     """Matches identifiers and keywords."""
@@ -141,7 +160,7 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\string.frag"
+    filename = r"pp1-post\samples\number.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
@@ -149,7 +168,7 @@ def main():
                 if token[4] == "T_Error":  # Unterminated string case
                     print(f"\n*** Error line {token[1]}.")
                     print(f"*** Unterminated string constant: {token[0]}\n")
-                elif len(token) == 6:
+                elif len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier':
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
                 else:
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]}")
