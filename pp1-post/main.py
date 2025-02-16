@@ -19,91 +19,109 @@ OPERATORS = {
     "{": "{", "}": "}", "(": "(", ")": ")"
 }
 
-# **Updated Number & String Patterns**
-HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")  # Hexadecimal numbers
-INT_PATTERN = re.compile(r"\b\d+\b")  # Decimal integers
-DOUBLE_PATTERN = re.compile(r"\b\d+\.\d*(E[+-]?\d+)?\b", re.IGNORECASE)  # Floating-point numbers
-STRING_PATTERN = re.compile(r'"([^"\n]*)"')  # Matches string constants (no newlines)
-SINGLE_LINE_COMMENT = re.compile(r"//.*")  # Matches `//` comments
-MULTI_LINE_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)  # Matches `/* ... */` comments
+# Regex Patterns
+HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")
+INT_PATTERN = re.compile(r"\b\d+\b")
+DOUBLE_PATTERN = re.compile(r"\b\d+\.\d*(E[+-]?\d+)?\b", re.IGNORECASE)
+STRING_PATTERN = re.compile(r'"([^"\n]*)"')
+SINGLE_LINE_COMMENT = re.compile(r"//.*")
+MULTI_LINE_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+IDENTIFIER_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{0,30}")
+OPERATOR_PATTERN = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
+
+### **Helper Functions**
+
+def remove_comments(source_code):
+    """Removes comments while preserving line numbers."""
+    source_code = re.sub(SINGLE_LINE_COMMENT, lambda m: " " * len(m.group(0)), source_code)
+    source_code = re.sub(MULTI_LINE_COMMENT, lambda m: "\n" * m.group(0).count("\n"), source_code)
+    return source_code
+
+def match_string(line, column):
+    """Matches string constants."""
+    match = STRING_PATTERN.match(line, column)
+    if match:
+        lexeme = match.group(0)
+        return lexeme, lexeme, len(lexeme)
+    return None
+
+def match_number(line, column):
+    """Matches integer, hexadecimal, and double constants."""
+    for pattern, token_type, converter in [
+        (HEX_PATTERN, "T_HexConstant", lambda x: int(x, 16)),
+        (DOUBLE_PATTERN, "T_DoubleConstant", float),
+        (INT_PATTERN, "T_IntConstant", int),
+    ]:
+        match = pattern.match(line, column)
+        if match:
+            lexeme = match.group(0)
+            value = converter(lexeme)
+            return lexeme, token_type, value, len(lexeme)
+    return None
+
+def match_operator(line, column):
+    """Matches operators and punctuation."""
+    match = OPERATOR_PATTERN.match(line, column)
+    if match:
+        lexeme = match.group(0)
+        token_type = OPERATORS.get(lexeme, "Unknown")
+        if len(lexeme) == 1:
+            token_type = f"'{token_type}'"
+        return lexeme, token_type, len(lexeme)
+    return None
+
+def match_identifier(line, column):
+    """Matches identifiers and keywords."""
+    match = IDENTIFIER_PATTERN.match(line, column)
+    if match:
+        lexeme = match.group(0)
+        if lexeme in BOOLEAN_CONSTANTS:
+            return lexeme, "T_BoolConstant", lexeme, len(lexeme)
+        elif lexeme in KEYWORDS:
+            return lexeme, KEYWORDS[lexeme], lexeme, len(lexeme)
+        else:
+            return lexeme, "T_Identifier", lexeme, len(lexeme)
+    return None
 
 def scan(source_code):
+    """Scans source code and returns tokens."""
     tokens = []
-    identifier_pattern = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{0,30}")
-    operator_pattern = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
+    source_code = remove_comments(source_code)
+    lines = source_code.split("\n")
 
-    # Replace comments with whitespace to preserve line numbers
-    source_code = re.sub(SINGLE_LINE_COMMENT, lambda m: " " * len(m.group(0)), source_code)  # Replace `//...`
-    source_code = re.sub(MULTI_LINE_COMMENT, lambda m: "\n" * m.group(0).count("\n"), source_code)  # Replace `/* ... */`
-
-    lines = source_code.split("\n")  # Process input line by line
     for line_num, line in enumerate(lines, start=1):
         column = 0
         while column < len(line):
-            # Match String Constants First
-            string_match = STRING_PATTERN.match(line, column)
-            if string_match:
-                lexeme = string_match.group(0)  # Keep full `"string"`
-                value = lexeme  # Preserve quotes
-                tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_StringConstant", value))
-                column += len(lexeme)
+            # Check for string constants
+            result = match_string(line, column)
+            if result:
+                lexeme, value, length = result
+                tokens.append((lexeme, line_num, column + 1, column + length, "T_StringConstant", value))
+                column += length
                 continue
 
-            # Match Hexadecimal Constants
-            hex_match = HEX_PATTERN.match(line, column)
-            if hex_match:
-                lexeme = hex_match.group(0)
-                value = int(lexeme, 16)  # Convert hex to integer value
-                tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_HexConstant", value))
-                column += len(lexeme)
+            # Check for numbers (hex, double, int)
+            result = match_number(line, column)
+            if result:
+                lexeme, token_type, value, length = result
+                tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
+                column += length
                 continue
 
-            # Match Numbers (Doubles first, then Integers)
-            double_match = DOUBLE_PATTERN.match(line, column)
-            if double_match:
-                lexeme = double_match.group(0)
-                value = float(lexeme)
-                if value.is_integer():
-                    value = int(value)  # Convert to int if no decimal part
-
-                tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_DoubleConstant", value))
-                column += len(lexeme)
+            # Check for operators & punctuation
+            result = match_operator(line, column)
+            if result:
+                lexeme, token_type, length = result
+                tokens.append((lexeme, line_num, column + 1, column + length, token_type))
+                column += length
                 continue
 
-            int_match = INT_PATTERN.match(line, column)
-            if int_match:
-                lexeme = int_match.group(0)
-                value = int(lexeme)  # Convert integer to remove leading zeros
-                tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_IntConstant", value))
-                column += len(lexeme)
-                continue
-
-            # Match Operators & Punctuation
-            op_match = operator_pattern.match(line, column)
-            if op_match:
-                op = op_match.group(0)
-                token_type = OPERATORS.get(op, "Unknown")
-
-                # Add quotes only for single-character symbols
-                if len(op) == 1:
-                    token_type = f"'{token_type}'"
-
-                tokens.append((op, line_num, column + 1, column + len(op), token_type))
-                column += len(op)
-                continue
-            
-            # Match Identifiers, Keywords, and Boolean Constants
-            match = identifier_pattern.match(line, column)
-            if match:
-                lexeme = match.group(0)
-                if lexeme in BOOLEAN_CONSTANTS:
-                    tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_BoolConstant", lexeme))
-                elif lexeme in KEYWORDS:
-                    tokens.append((lexeme, line_num, column + 1, column + len(lexeme), KEYWORDS[lexeme]))
-                else:
-                    tokens.append((lexeme, line_num, column + 1, column + len(lexeme), "T_Identifier"))
-                
-                column += len(lexeme)
+            # Check for identifiers & keywords
+            result = match_identifier(line, column)
+            if result:
+                lexeme, token_type, value, length = result
+                tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
+                column += length
                 continue
             
             column += 1  # Move to next character if no match
@@ -111,7 +129,7 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\comment.frag"
+    filename = r"pp1-post\samples\reserve_op.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
