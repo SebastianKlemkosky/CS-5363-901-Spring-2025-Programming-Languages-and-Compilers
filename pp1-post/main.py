@@ -60,13 +60,14 @@ def match_string(line, column):
         lexeme = match.group(0)
         return lexeme, "T_StringConstant", lexeme, len(lexeme)
 
-    # Check for unterminated strings
+    # Check for unterminated strings (no closing quote)
     unterminated_match = UNTERMINATED_STRING_PATTERN.match(line, column)
     if unterminated_match:
         lexeme = unterminated_match.group(0)
-        return lexeme, "T_Error", "Unterminated string", len(lexeme)
+        return lexeme, "T_Error", f"Unterminated string constant: {lexeme}", len(lexeme)
 
     return None
+
 
 def match_number(line, column):
     """Matches integer, hexadecimal, and double constants."""
@@ -96,7 +97,6 @@ def match_operator(line, column):
         return lexeme, token_type, len(lexeme)
     return None
 
-
 def match_identifier(line, column):
     """Matches identifiers and keywords."""
     match = IDENTIFIER_PATTERN.match(line, column)
@@ -118,6 +118,14 @@ def scan(source_code):
 
     for line_num, line in enumerate(lines, start=1):
         column = 0
+
+        # Check for # directives (e.g., #define)
+        if line.strip().startswith("#"):
+            # Report invalid # directive
+            tokens.append((line.strip(), line_num, 1, len(line.strip()), "T_Error", "Invalid # directive"))
+            continue  # Skip the rest of the line
+
+
         while column < len(line):
             # Check for string constants
             result = match_string(line, column)
@@ -160,14 +168,14 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\number.frag"
+    filename = r"pp1-post\samples\badop.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
             for token in tokens:
                 if token[4] == "T_Error":  # Unterminated string case
                     print(f"\n*** Error line {token[1]}.")
-                    print(f"*** Unterminated string constant: {token[0]}\n")
+                    print(f"*** {token[5]}\n")
                 elif len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier':
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
                 else:
