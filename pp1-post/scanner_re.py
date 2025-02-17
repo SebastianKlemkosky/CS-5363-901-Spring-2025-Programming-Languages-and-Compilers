@@ -35,11 +35,10 @@ OPERATORS = {
     ".": "'.'"  
 }
 
-
 # Regex Patterns
 HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")
 INT_PATTERN = re.compile(r"\b\d+\b")
-DOUBLE_PATTERN = re.compile(r"\b\d+\.\d*(E[+-]?\d+)?\b", re.IGNORECASE)
+DOUBLE_PATTERN = re.compile(r"'\d*\.\d+([eE][+-]?\d+)?'")
 STRING_PATTERN = re.compile(r'"([^"\\\n]*(\\.[^"\\\n]*)*)"')
 SINGLE_LINE_COMMENT = re.compile(r"//.*")
 MULTI_LINE_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -83,11 +82,18 @@ def match_number(line, column):
                 value = int(lexeme, 16)  # Convert to integer using base 16
                 return lexeme, "T_HexConstant", value, len(lexeme)
     
-    # Handle invalid period (.) cases for floating-point numbers
+    # Handle period (.) cases for floating-point numbers
     if line[column] == ".":
-        # If the period is not followed by digits, treat it as an operator (invalid period)
-        if re.match(r"^\.$", line[column:column+1]):  # Invalid period like "."
-            return ".", "T_Operator", 1  # Treat the period as a standalone operator (.)
+        # Check if the period is followed by digits (valid double case like 12.34 or 1.12)
+        if column - 1 >= 0 and line[column - 1].isdigit() and column + 1 < len(line) and line[column + 1].isdigit():
+            match = DOUBLE_PATTERN.match(line, column)
+            if match:
+                lexeme = match.group(0)
+                value = float(lexeme)
+                return lexeme, "T_DoubleConstant", value, len(lexeme)
+
+        # If the period is not followed by digits (invalid period like "." or "12.")
+        return ".", "T_Operator", 1  # Treat the period as a standalone operator (.)
 
     # Regular matching for numbers (hex, double, int)
     for pattern, token_type, converter in [
