@@ -35,6 +35,7 @@ OPERATORS = {
     ".": "'.'"  
 }
 
+
 # Regex Patterns
 HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")
 INT_PATTERN = re.compile(r"\b\d+\b")
