@@ -72,21 +72,21 @@ def match_string(line, column):
 def match_number(line, column):
     """Matches integer, hexadecimal, and double constants."""
     
-    # Check if the number starts with 0x or 0X, indicating it's a hexadecimal constant
+    # Check for hexadecimal numbers (0x or 0X followed by valid hexadecimal digits)
     if line[column:column+2].lower() == "0x":
-        # After 0x, check if there are valid hexadecimal digits
+        # Check if the rest of the string after 0x is valid hexadecimal digits
         if column + 2 < len(line) and (line[column + 2].isdigit() or line[column + 2].lower() in 'abcdef'):
-            # Match the whole hexadecimal number
-            match = HEX_PATTERN.match(line, column)
+            match = HEX_PATTERN.match(line, column)  # Match the whole hexadecimal value
             if match:
                 lexeme = match.group(0)
                 value = int(lexeme, 16)  # Convert to integer using base 16
                 return lexeme, "T_HexConstant", value, len(lexeme)
-        else:
-            # If 0x is followed by invalid characters, treat 0 and x separately
-            return "0", "T_IntConstant", 0, 1  # Treat 0 as integer
-            # Treat "x" as identifier
-            return "x", "T_Identifier", "x", 1  # Treat x as identifier
+    
+    # Handle invalid period (.) cases for floating-point numbers
+    if line[column] == ".":
+        # If the period is not followed by digits, treat it as an operator (invalid period)
+        if re.match(r"^\.$", line[column:column+1]):  # Invalid period like "."
+            return ".", "T_Operator", 1  # Treat the period as a standalone operator (.)
 
     # Regular matching for numbers (hex, double, int)
     for pattern, token_type, converter in [
@@ -98,7 +98,6 @@ def match_number(line, column):
         if match:
             lexeme = match.group(0)
             value = converter(lexeme)
-
             # Convert float to int if it has no decimal portion
             if token_type == "T_DoubleConstant" and value.is_integer():
                 value = int(value)  # Remove unnecessary .0
@@ -106,7 +105,6 @@ def match_number(line, column):
             return lexeme, token_type, value, len(lexeme)
     
     return None
-
 
 def match_operator(line, column):
     """Matches operators and punctuation."""
@@ -145,7 +143,6 @@ def scan(source_code):
             tokens.append((line.strip(), line_num, 1, len(line.strip()), "T_Error", "Invalid # directive"))
             continue  # Skip the rest of the line
 
-
         while column < len(line):
             # Check for string constants
             result = match_string(line, column)
@@ -162,9 +159,15 @@ def scan(source_code):
             # Check for numbers (hex, double, int)
             result = match_number(line, column)
             if result:
-                lexeme, token_type, value, length = result
-                tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
-                column += length
+                if len(result) == 4:  # Valid double
+                    lexeme, token_type, value, length = result
+                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
+                    column += length
+                elif len(result) == 3:  # Invalid double
+                    lexeme, token_type, length = result
+                    token_type = OPERATORS.get(lexeme, "Unknown")
+                    tokens.append((lexeme, line_num, column + 1, column + length, token_type))
+                    column += length
                 continue
 
             # Check for operators & punctuation
@@ -194,7 +197,7 @@ def scan(source_code):
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\number.frag"
+    filename = r"pp1-post\samples\baddouble.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
