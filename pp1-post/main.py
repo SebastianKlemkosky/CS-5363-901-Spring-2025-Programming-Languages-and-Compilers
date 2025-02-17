@@ -1,4 +1,5 @@
 import re
+import string
 
 # Reserved keywords
 KEYWORDS = {
@@ -68,13 +69,30 @@ def match_string(line, column):
 
     return None
 
-
 def match_number(line, column):
     """Matches integer, hexadecimal, and double constants."""
+    
+    # Check if the number starts with 0x or 0X, indicating it's a hexadecimal constant
+    if line[column:column+2].lower() == "0x":
+        # After 0x, check if there are valid hexadecimal digits
+        if column + 2 < len(line) and (line[column + 2].isdigit() or line[column + 2].lower() in 'abcdef'):
+            # Match the whole hexadecimal number
+            match = HEX_PATTERN.match(line, column)
+            if match:
+                lexeme = match.group(0)
+                value = int(lexeme, 16)  # Convert to integer using base 16
+                return lexeme, "T_HexConstant", value, len(lexeme)
+        else:
+            # If 0x is followed by invalid characters, treat 0 and x separately
+            return "0", "T_IntConstant", 0, 1  # Treat 0 as integer
+            # Treat "x" as identifier
+            return "x", "T_Identifier", "x", 1  # Treat x as identifier
+
+    # Regular matching for numbers (hex, double, int)
     for pattern, token_type, converter in [
-        (HEX_PATTERN, "T_HexConstant", lambda x: int(x, 16)),
-        (DOUBLE_PATTERN, "T_DoubleConstant", float),
-        (INT_PATTERN, "T_IntConstant", int),
+        (HEX_PATTERN, "T_HexConstant", lambda x: int(x, 16)),  # Hexadecimal handling
+        (DOUBLE_PATTERN, "T_DoubleConstant", float),           # Double handling
+        (INT_PATTERN, "T_IntConstant", int),                   # Integer handling
     ]:
         match = pattern.match(line, column)
         if match:
@@ -86,7 +104,9 @@ def match_number(line, column):
                 value = int(value)  # Remove unnecessary .0
 
             return lexeme, token_type, value, len(lexeme)
+    
     return None
+
 
 def match_operator(line, column):
     """Matches operators and punctuation."""
@@ -162,13 +182,19 @@ def scan(source_code):
                 tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
                 column += length
                 continue
+
+            # Check for invalid characters (unrecognized)
+            invalid_char = line[column]
+            if invalid_char not in string.whitespace and not invalid_char.isalnum() and invalid_char not in OPERATORS and invalid_char not in KEYWORDS:
+                # Add error for unrecognized character
+                tokens.append((invalid_char, line_num, column + 1, column + 1, "T_Error", f"Unrecognized char: '{invalid_char}'"))
             
             column += 1  # Move to next character if no match
 
     return tokens
 
 def main():
-    filename = r"pp1-post\samples\badop.frag"
+    filename = r"pp1-post\samples\number.frag"
     try:
         with open(filename, 'r') as file:
             tokens = scan(file.read())
