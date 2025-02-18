@@ -1,60 +1,92 @@
 import ply.lex as lex
+import string
 
-# Reserved keywords in Decaf 22
-reserved = {
-    'void': 'T_Void', 'int': 'T_Int', 'double': 'T_Double', 'bool': 'T_Bool', 'string': 'T_String',
-    'null': 'T_Null', 'for': 'T_For', 'while': 'T_While', 'if': 'T_If', 'else': 'T_Else',
-    'return': 'T_Return', 'break': 'T_Break', 'Print': 'T_Print', 'ReadInteger': 'T_ReadInteger',
-    'ReadLine': 'T_ReadLine'
+# Reserved Keywords
+KEYWORDS = {
+    "void": "T_Void", "int": "T_Int", "double": "T_Double", "bool": "T_Bool", "string": "T_String",
+    "null": "T_Null", "for": "T_For", "while": "T_While", "if": "T_If", "else": "T_Else",
+    "return": "T_Return", "break": "T_Break", "Print": "T_Print", "ReadInteger": "T_ReadInteger",
+    "ReadLine": "T_ReadLine"
 }
 
-# List of token names (including reserved keywords)
+# Boolean Constants
+BOOLEAN_CONSTANTS = {"true", "false"}
+
+# Operators & Punctuation (PLY Requires Valid Token Names)
+OPERATORS = {
+    "||": "T_Or", "<=": "T_LessEqual", ">=": "T_GreaterEqual", "==": "T_Equal"
+}
+
 tokens = [
-    'T_Identifier', 'T_IntConstant', 'T_DoubleConstant', 'T_StringConstant',
-    'T_Operator', 'T_LParen', 'T_RParen', 'T_LBrace', 'T_RBrace', 'T_Semicolon',
-    'T_Comma', 'T_BoolConstant'
-] + list(reserved.values())  # Add reserved keywords
+    "T_Identifier", "T_IntConstant", "T_HexConstant", "T_DoubleConstant",
+    "T_StringConstant", "T_BoolConstant"
+] + list(KEYWORDS.values()) + ["T_Or", "T_LessEqual", "T_GreaterEqual", "T_Equal"]
 
-# Regular expressions for basic tokens
-t_T_Identifier = r'[a-zA-Z_][a-zA-Z0-9_]*'  # Match identifiers
-t_T_IntConstant = r'\d+'  # Integer constants
-t_T_DoubleConstant = r'\d*\.\d+([eE][+-]?\d+)?'  # Double constants (with optional scientific notation)
-t_T_StringConstant = r'"([^"\\\n]*(\\.[^"\\\n]*)*)"'  # String constants (escaping allowed)
-t_T_Operator = r'[+\-*/%=<>&|!^]'
-t_T_LParen = r'\('
-t_T_RParen = r'\)'
-t_T_LBrace = r'\{'
-t_T_RBrace = r'\}'
-t_T_Semicolon = r';'
-t_T_Comma = r','
+# Define literals for single-character operators
+literals = "+-*/<>=;,!{}()."
 
-# Boolean constants (true/false)
-t_T_BoolConstant = r'(true|false)'
+# Identifier Pattern
+t_T_Identifier = r'[a-zA-Z_][a-zA-Z0-9_]*'
 
-# Skip whitespace (space, tab, newline)
-t_ignore = ' \t\n\r'
+# Operator Token Definitions (Only Multi-Character)
+t_T_Or = r'\|\|'
+t_T_LessEqual = r'<='
+t_T_GreaterEqual = r'>='
+t_T_Equal = r'=='
 
-# Handle comments (both single-line and multi-line comments)
-t_ignore_COMMENT = r'//.*'  # Single-line comment
-t_ignore_COMMENT_MULTI = r'/\*.*?\*/'  # Multi-line comment
-
-# Track line numbers for each token
-def t_newline(t):
-    r'\n+'
-    t.lineno += t.value.count("\n")  # Increment line number based on the number of newline characters
-
-# Error handling rule
+# Error Handling (Only Needed for Unknown Characters)
 def t_error(t):
-    print(f"Illegal character '{t.value[0]}'")
+    print(f"Illegal character '{t.value[0]}' at line {t.lineno}")
     t.lexer.skip(1)
 
-# Build the lexer
+# Build the Lexer
 lexer = lex.lex()
 
+### **Helper Functions**
+
+def remove_comments(source_code):
+
+    return source_code
+
+def match_string(line, column):
+
+    return None
+
+def match_number(line, column):
+
+    
+    return None
+
+def match_operator(line, column):
+    """Matches both multi-character and single-character operators using PLY."""
+    
+    # First, check multi-character operators (PLY rules)
+    lexer.input(line[column:])  
+    token = lexer.token()
+    if token and token.value in OPERATORS:
+        return token.value, OPERATORS[token.value], len(token.value)
+
+    # If not a multi-character operator, check single-character literals
+    if line[column] in literals:
+        return line[column], line[column], 1  # Return the character as its own token
+
+    return None
 
 
-# Function to tokenize the input code and format output
-def scan(source_code):
+def match_identifier(line, column):
+    """Matches identifiers and keywords using PLY."""
+    lexer.input(line[column:])  # Set PLY lexer input from the current column
+    token = lexer.token()  # Get the next token
+    if token:
+        if token.value in KEYWORDS:
+            return token.value, KEYWORDS[token.value], token.value, len(token.value)
+        elif token.value in BOOLEAN_CONSTANTS:
+            return token.value, "T_BoolConstant", token.value == "true", len(token.value)
+        else:
+            return token.value, "T_Identifier", token.value, len(token.value)
+    return None
+
+def tokenize(source_code):
     """Scans source code and returns tokens."""
     tokens = []
     source_code = remove_comments(source_code)
@@ -73,27 +105,13 @@ def scan(source_code):
             # Check for string constants
             result = match_string(line, column)
             if result:
-                if len(result) == 3:  # Valid string
-                    lexeme, value, length = result
-                    tokens.append((lexeme, line_num, column + 1, column + length, "T_StringConstant", value))
-                elif len(result) == 4:  # Unterminated string
-                    lexeme, token_type, error_message, length = result
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, error_message))
-                column += length
+   
                 continue
 
             # Check for numbers (hex, double, int)
             result = match_number(line, column)
             if result:
-                if len(result) == 4:  # Valid double
-                    lexeme, token_type, value, length = result
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
-                    column += length
-                elif len(result) == 3:  # Invalid double
-                    lexeme, token_type, length = result
-                    token_type = OPERATORS.get(lexeme, "Unknown")
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type))
-                    column += length
+
                 continue
 
             # Check for operators & punctuation
@@ -121,3 +139,4 @@ def scan(source_code):
             column += 1  # Move to next character if no match
 
     return tokens
+
