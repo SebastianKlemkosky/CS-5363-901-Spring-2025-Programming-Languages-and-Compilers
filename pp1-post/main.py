@@ -18,9 +18,12 @@ def main2():
                 # Generate actual output
                 actual_output = []
                 for token in tokens:
-                    if token[4] == "T_Error":  # Unterminated string case
+                    if token[4] == "T_Error":  # Error case (e.g., unterminated strings)
                         actual_output.append(f"\n*** Error line {token[1]}.\n*** {token[5]}\n")
-                    elif len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier ':
+                        
+                        if len(token) == 8:  # Identifiers with truncation (length 8 due to the extra returned value)
+                            actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[7]} (truncated to {token[6]})")
+                    elif len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier':
                         actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
                     else:
                         actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]}")
@@ -50,7 +53,7 @@ def main2():
                 print(f"⚠️ Missing .out file for: {filename}")
 
 def main():
-    filename = r"pp1-post\samples\baddouble.frag"
+    filename = r"pp1-post\samples\badop.frag"
     try:
         with open(filename, 'r') as file:
             tokens = tokenize(file.read())
@@ -58,6 +61,9 @@ def main():
                 if token[4] == "T_Error":  # Unterminated string case
                     print(f"\n*** Error line {token[1]}.")
                     print(f"*** {token[5]}\n")
+                    if len(token) == 8:
+                        print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[7]} (truncated to {token[6]})")
+                
                 elif len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier ':
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
                 else:
@@ -67,6 +73,6 @@ def main():
         print(f"Error: File '{filename}' not found.")
 
 if __name__ == "__main__":
-    main()
+    main2()
 
 

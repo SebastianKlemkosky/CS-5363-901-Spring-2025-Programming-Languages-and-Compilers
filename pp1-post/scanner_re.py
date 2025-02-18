@@ -31,19 +31,21 @@ OPERATORS = {
     "{": "'{' ",  
     "}": "'}' ",  
     "(": "'(' ",  
-    ")": "')' ",  
+    ")": "')' ",
     ".": "'.' "  
 }
+
+MAX_IDENTIFIER_LENGTH = 31  # Example maximum length for identifiers
 
 # Regex Patterns
 HEX_PATTERN = re.compile(r'0[xX][0-9a-fA-F]+')  # Matches hexadecimal numbers
 DOUBLE_PATTERN = re.compile(r'\d+\.\d*([eE][+-]?\d+)?')  # Ensures a digit before `.`
-INT_PATTERN = re.compile(r'\b\d+\b')  # Matches integer numbers
+INT_PATTERN = re.compile(r'\d+')
 
 STRING_PATTERN = re.compile(r'"([^"\\\n]*(\\.[^"\\\n]*)*)"')
 SINGLE_LINE_COMMENT = re.compile(r"//.*")
 MULTI_LINE_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
-IDENTIFIER_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{0,30}")
+IDENTIFIER_PATTERN = re.compile(r'[a-zA-Z][a-zA-Z0-9_]*')
 OPERATOR_PATTERN = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
 UNTERMINATED_STRING_PATTERN = re.compile(r'"[^"\n]*$')
 
@@ -93,7 +95,6 @@ def match_number(line, column):
         lexeme = match.group(0)
         value = float(lexeme)
 
-        # ✅ Convert to int if it has no decimal portion (e.g., 1200.0 -> 1200)
         if value.is_integer():
             value = int(value)
 
@@ -108,28 +109,50 @@ def match_number(line, column):
 
     return None  # No match found
 
-
 def match_operator(line, column):
     """Matches operators and punctuation."""
     match = OPERATOR_PATTERN.match(line, column)
     if match:
         lexeme = match.group(0)
-        token_type = OPERATORS.get(lexeme, "Unknown")
+
+        # Check if the lexeme is in the OPERATORS dictionary
+        token_type = OPERATORS.get(lexeme, "T_Error")  # Default to T_Error if unknown operator
+        
+        # If it's an unrecognized operator, return an error
+        if token_type == "T_Error":
+            return lexeme, "T_Error", f"Unrecognized operator: \"{lexeme}\"", len(lexeme)
+
+        # Otherwise, return the valid operator token
         return lexeme, token_type, len(lexeme)
-    return None
+    
+    return None  # No match found
+
 
 def match_identifier(line, column):
     """Matches identifiers and keywords."""
-    match = IDENTIFIER_PATTERN.match(line, column)
+    match = IDENTIFIER_PATTERN.match(line[column:])
     if match:
         lexeme = match.group(0)
+
+        # Check if the identifier exceeds the max length
+        if len(lexeme) > MAX_IDENTIFIER_LENGTH:
+            truncated_lexeme = lexeme[:MAX_IDENTIFIER_LENGTH]
+            # Return the truncated identifier with an error message #Have some identifier for this issue lexme twice
+            return lexeme, "T_Error", f"Identifier too long: \"{lexeme}\"", len(lexeme), truncated_lexeme
+
+        # Check if it's a boolean constant
         if lexeme in BOOLEAN_CONSTANTS:
             return lexeme, "T_BoolConstant", lexeme, len(lexeme)
+
+        # Check if it's a keyword
         elif lexeme in KEYWORDS:
             return lexeme, KEYWORDS[lexeme], lexeme, len(lexeme)
-        else:
-            return lexeme, "T_Identifier ", len(lexeme)
-    return None
+
+        # Otherwise, it's a regular identifier
+        return lexeme, "T_Identifier ", len(lexeme)
+
+    return None  # No match found
+
 
 def tokenize(source_code):
     """Scans source code and returns tokens."""
@@ -145,7 +168,7 @@ def tokenize(source_code):
             # Report invalid # directive
             tokens.append((line.strip(), line_num, 1, len(line.strip()), "T_Error ", "Invalid # directive"))
             continue  # Skip the rest of the line
-
+        
         while column < len(line):
             # Check for string constants
             result = match_string(line, column)
@@ -192,14 +215,16 @@ def tokenize(source_code):
                     lexeme, token_type, value, length = result
                     tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
                     column += length
+                
+                elif len(result) == 5:  # Identifiers with values and truncation
+                        lexeme, token_type, value, length, truncated_lexeme = result
+                        if token_type == 'T_Error':
+                            tokens.append((lexeme, line_num, column + 1, column + length, token_type, value, truncated_lexeme, 'T_Identifier'))
+                            column += length  # Update the column based on the truncated length
                 continue
 
-            # Check for invalid characters (unrecognized)
-            invalid_char = line[column]
-            if invalid_char not in string.whitespace and not invalid_char.isalnum() and invalid_char not in OPERATORS and invalid_char not in KEYWORDS:
-                # Add error for unrecognized character
-                tokens.append((invalid_char, line_num, column + 1, column + 1, "T_Error ", f"Unrecognized char: '{invalid_char}'"))
-            
+
+
             column += 1  # Move to next character if no match
 
     return tokens
