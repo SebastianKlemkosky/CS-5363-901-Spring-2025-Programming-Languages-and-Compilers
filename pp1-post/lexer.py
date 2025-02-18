@@ -1,5 +1,6 @@
 import ply.lex as lex
 import string
+import re
 
 # Reserved Keywords
 KEYWORDS = {
@@ -19,8 +20,21 @@ OPERATORS = {
 
 tokens = [
     "T_Identifier", "T_IntConstant", "T_HexConstant", "T_DoubleConstant",
-    "T_StringConstant", "T_BoolConstant"
+    "T_StringConstant", "T_BoolConstant", "T_Error"
 ] + list(KEYWORDS.values()) + ["T_Or", "T_LessEqual", "T_GreaterEqual", "T_Equal"]
+
+# Regex Patterns
+HEX_PATTERN = re.compile(r"\b0[xX][0-9a-fA-F]+\b")
+INT_PATTERN = re.compile(r"\b\d+\b")
+DOUBLE_PATTERN = re.compile(r"'\d*\.\d+([eE][+-]?\d+)?'")
+STRING_PATTERN = re.compile(r'"([^"\\\n]*(\\.[^"\\\n]*)*)"')
+SINGLE_LINE_COMMENT = re.compile(r"//.*")
+MULTI_LINE_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+IDENTIFIER_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9_]{0,30}")
+OPERATOR_PATTERN = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
+UNTERMINATED_STRING_PATTERN = re.compile(r'"[^"\n]*$')
+
+
 
 # Define literals for single-character operators
 literals = "+-*/<>=;,!{}()."
@@ -34,10 +48,25 @@ t_T_LessEqual = r'<='
 t_T_GreaterEqual = r'>='
 t_T_Equal = r'=='
 
-# Error Handling (Only Needed for Unknown Characters)
 def t_error(t):
+    """Handles unrecognized tokens but ignores valid whitespace."""
+    if t.value[0] in " \t\r":  # Ignore whitespace
+        t.lexer.skip(1)
+        return
+    
     print(f"Illegal character '{t.value[0]}' at line {t.lineno}")
     t.lexer.skip(1)
+
+def t_T_Error(t):
+    r'"[^"\n]*$'  # Ensures unterminated strings are only matched when valid strings fail
+    t.value = "Unterminated string constant"
+    return t
+
+
+def t_T_StringConstant(t):
+    r'"([^"\n]*)"'  # Matches valid strings while ensuring they don't span lines
+    return t
+
 
 # Build the Lexer
 lexer = lex.lex()
@@ -48,7 +77,20 @@ def remove_comments(source_code):
 
     return source_code
 
+
+
 def match_string(line, column):
+    """Matches valid and unterminated string constants."""
+    match = STRING_PATTERN.match(line, column)  # Check for valid strings
+    if match:
+        lexeme = match.group(0)
+        return lexeme, "T_StringConstant", lexeme, len(lexeme)
+
+    # Check for unterminated strings (no closing quote)
+    unterminated_match = UNTERMINATED_STRING_PATTERN.match(line, column)
+    if unterminated_match:
+        lexeme = unterminated_match.group(0)
+        return lexeme, "T_Error", f"Unterminated string constant: {lexeme}", len(lexeme)
 
     return None
 
@@ -72,7 +114,6 @@ def match_operator(line, column):
 
     return None
 
-
 def match_identifier(line, column):
     """Matches identifiers and keywords using PLY."""
     lexer.input(line[column:])  # Set PLY lexer input from the current column
@@ -81,7 +122,7 @@ def match_identifier(line, column):
         if token.value in KEYWORDS:
             return token.value, KEYWORDS[token.value], token.value, len(token.value)
         elif token.value in BOOLEAN_CONSTANTS:
-            return token.value, "T_BoolConstant", token.value == "true", len(token.value)
+            return token.value, "T_BoolConstant", token.value, len(token.value)
         else:
             return token.value, "T_Identifier", token.value, len(token.value)
     return None
@@ -102,10 +143,17 @@ def tokenize(source_code):
             continue  # Skip the rest of the line
 
         while column < len(line):
+
             # Check for string constants
             result = match_string(line, column)
             if result:
-   
+                if len(result) == 3:  # Valid string
+                    lexeme, value, length = result
+                    tokens.append((lexeme, line_num, column + 1, column + length, "T_StringConstant", value))
+                elif len(result) == 4:  # Unterminated string
+                    lexeme, token_type, error_message, length = result
+                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, error_message))
+                column += length
                 continue
 
             # Check for numbers (hex, double, int)
