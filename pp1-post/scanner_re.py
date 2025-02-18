@@ -163,12 +163,6 @@ def tokenize(source_code):
     for line_num, line in enumerate(lines, start=1):
         column = 0
 
-        # Check for # directives (e.g., #define)
-        if line.strip().startswith("#"):
-            # Report invalid # directive
-            tokens.append((line.strip(), line_num, 1, len(line.strip()), "T_Error ", "Invalid # directive"))
-            continue  # Skip the rest of the line
-        
         while column < len(line):
             # Check for string constants
             result = match_string(line, column)
