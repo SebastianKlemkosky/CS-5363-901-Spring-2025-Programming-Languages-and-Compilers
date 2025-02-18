@@ -18,7 +18,7 @@ def main2():
                 # Generate actual output
                 actual_output = []
                 for token in tokens:
-                    if token[4] == "T_Error":  # Error case (e.g., unterminated strings)
+                    if token[4] == "T_Error":
                         actual_output.append(f"\n*** Error line {token[1]}.\n*** {token[5]}\n")
                         
                         if len(token) == 8:  # Identifiers with truncation (length 8 due to the extra returned value)
@@ -64,7 +64,7 @@ def main():
                     if len(token) == 8:
                         print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[7]} (truncated to {token[6]})")
                 
-                elif len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier ':
+                elif len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier ' and token[4] != 'T_Error':
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
                 else:
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]}")
