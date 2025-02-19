@@ -194,7 +194,10 @@ def tokenize(source_code):
             result = match_identifier(line, column)
             if result:
                 lexeme, token_type, value, length = result
-                tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
+                if token_type == "T_Error":
+                    handle_error((lexeme, line_num, column + 1, column + length, token_type, value))
+                else:
+                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
                 column += length
                 continue
 
