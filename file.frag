@@ -1,1 +1,1 @@
-line = "int x = true;"
+=!

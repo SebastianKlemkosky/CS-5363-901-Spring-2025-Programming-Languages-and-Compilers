@@ -68,7 +68,7 @@ def match_string(line, column):
     unterminated_match = UNTERMINATED_STRING_PATTERN.match(line, column)
     if unterminated_match:
         lexeme = unterminated_match.group(0)
-        return lexeme, "T_Error", f"Unterminated string constant: {lexeme}", len(lexeme)
+        return lexeme, "T_Error", "T_UNTERMINATED_STRING_CONSTANT", len(lexeme)
 
     return None
 
@@ -118,12 +118,12 @@ def match_operator(line, column):
 
         # Check if the lexeme is in the OPERATORS dictionary
         token_type = OPERATORS.get(lexeme, "Unknown")
-        
         return lexeme, token_type, None, len(lexeme)
     
       # No match found
-    return line[column], "T_Error", f"Unrecognized char: \"{line[column]}\"", len(line[column])
-
+    if line[column] != " ":
+        return line[column], "T_Error", "T_UNRECOGNIZED_CHAR", 1
+    return None
 
 def match_identifier(line, column):
     """Matches identifiers and keywords."""
@@ -133,9 +133,8 @@ def match_identifier(line, column):
 
         # Check if the identifier exceeds the max length
         if len(lexeme) > MAX_IDENTIFIER_LENGTH:
-            truncated_lexeme = lexeme[:MAX_IDENTIFIER_LENGTH]
             # Return the truncated identifier with an error message #Have some identifier for this issue lexme twice
-            return lexeme, "T_Error", f"Identifier too long: \"{lexeme}\"", len(lexeme)
+            return lexeme, "T_Error", "T_MAX_IDENTIFIER_LENGTH", len(lexeme)
 
         # Check if it's a boolean constant
         if lexeme in BOOLEAN_CONSTANTS:
@@ -153,7 +152,22 @@ def match_identifier(line, column):
 def handle_error(token):
     """Handles tokens with T_Error by printing an error message."""
     lexeme, line_num, start_col, end_col, token_type, error_message = token
+
+    if error_message == "T_UNTERMINATED_STRING_CONSTANT":
+        error_message = f"Unterminated string constant: {lexeme}"
+
+    if error_message == "T_UNRECOGNIZED_CHAR":
+        error_message = f"Unrecognized char: \'{lexeme}\'"
     
+    if error_message == "T_MAX_IDENTIFIER_LENGTH":
+        truncated_lexeme = lexeme[:MAX_IDENTIFIER_LENGTH]
+        error_message = f"Identifier too long: \"{lexeme}\"\n"
+        error_message += f"\n{lexeme:<12} line {line_num} cols {start_col}-{end_col} is T_Identifier (truncated to {truncated_lexeme})\n)"
+    
+    if error_message == "T_INVALID_DIRECTIVE":
+        error_message = f"Invalid # directive"
+    
+    return lexeme, line_num, start_col, end_col, token_type, error_message
 
 def tokenize(source_code):
     """Scans source code and returns tokens."""
@@ -164,16 +178,24 @@ def tokenize(source_code):
     for line_num, line in enumerate(lines, start=1):
         column = 0
 
+        # Check for # directives (e.g., #define)
+        if line.strip().startswith("#"):
+            # Report invalid # directive by passing to handle_error()
+            lexeme, line_num, start_col, end_col, token_type, value = handle_error((line.strip(), line_num, 1, len(line.strip()), "T_Error", "T_INVALID_DIRECTIVE"))
+            tokens.append((lexeme, line_num, start_col, end_col, token_type, value))  # Append the error message
+            continue  # Skip the rest of the line
+
 
         while column < len(line):
             # Check for string constants
             result = match_string(line, column)
             if result:
                 lexeme, token_type, value, length = result
+                start_col, end_col = column + 1, column + length
                 if token_type == "T_Error":
-                    handle_error((lexeme, line_num, column + 1, column + length, token_type, value))
-                else:
-                    tokens.append((lexeme, line_num, column + 1, column + length, "T_StringConstant", lexeme))
+                    lexeme, line_num, start_col, end_col, token_type, value = handle_error((lexeme, line_num, start_col, end_col, token_type, value))
+                
+                tokens.append((lexeme, line_num, start_col, end_col, token_type, value))
                 column += length
                 continue
 
@@ -181,23 +203,23 @@ def tokenize(source_code):
             result = match_number(line, column)
             if result:
                 lexeme, token_type, value, length = result
+                start_col, end_col = column + 1, column + length
                 if token_type == "T_Error":
-                    handle_error((lexeme, line_num, column + 1, column + length, token_type, value))
-                else:
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
+                    lexeme, line_num, start_col, end_col, token_type, value = handle_error((lexeme, line_num, start_col, end_col, token_type, value))
+                
+                tokens.append((lexeme, line_num, start_col, end_col, token_type, value))
                 column += length
                 continue
-
-
 
             # Check for identifiers & keywords
             result = match_identifier(line, column)
             if result:
                 lexeme, token_type, value, length = result
+                start_col, end_col = column + 1, column + length
                 if token_type == "T_Error":
-                    handle_error((lexeme, line_num, column + 1, column + length, token_type, value))
-                else:
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
+                    lexeme, line_num, start_col, end_col, token_type, value = handle_error((lexeme, line_num, start_col, end_col, token_type, value))
+                
+                tokens.append((lexeme, line_num, start_col, end_col, token_type, value))
                 column += length
                 continue
 
@@ -206,10 +228,11 @@ def tokenize(source_code):
             result = match_operator(line, column)
             if result:
                 lexeme, token_type, value, length = result
+                start_col, end_col = column + 1, column + length
                 if token_type == "T_Error":
-                    handle_error((lexeme, line_num, column + 1, column + length, token_type, value))
-                else:
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type))
+                    lexeme, line_num, start_col, end_col, token_type, value = handle_error((lexeme, line_num, start_col, end_col, token_type, value))
+                
+                tokens.append((lexeme, line_num, start_col, end_col, token_type, value))
                 column += length
                 continue
 

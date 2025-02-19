@@ -18,11 +18,15 @@ def main2():
                 # Generate actual output
                 actual_output = []
                 for token in tokens:
+                    if token[4] == 'T_Error':
+                        actual_output.append(f"\n*** Error line {token[1]}.")
+                        actual_output.append(f"*** {token[5]}\n")
+                        continue   
 
-                    if len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier' and token[5] != None: 
+                    if token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier ' and token[5] != None: 
                         actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
-                    else:
-                        actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} ")
+                        continue
+                    actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} ")
 
                 # Read expected .out file
                 with open(out_file, 'r') as expected_file:
@@ -49,16 +53,23 @@ def main2():
                 print(f"⚠️ Missing .out file for: {filename}")
 
 def main():
-    filename = r"pp1-post\samples\badident.frag"
+    filename = r"pp1-post\samples\badpre.frag"
     try:
         with open(filename, 'r') as file:
             tokens = tokenize(file.read())
             for token in tokens:
-  
-                if len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier ' and token[5] != None:
+                # First, check for T_Error and handle it
+                if token[4] == 'T_Error':
+                    print(f"\n*** Error line {token[1]}.")
+                    print(f"*** {token[5]}\n")
+                    continue  
+
+                # If it's not an error token, process normal tokens
+                if token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier' and token[5] != None:
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
-                else:
-                    print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} ")
+                    continue
+
+                print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} ")
 
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
