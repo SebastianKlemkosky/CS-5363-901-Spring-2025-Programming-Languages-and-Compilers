@@ -162,7 +162,7 @@ def handle_error(token):
     if error_message == "T_MAX_IDENTIFIER_LENGTH":
         truncated_lexeme = lexeme[:MAX_IDENTIFIER_LENGTH]
         error_message = f"Identifier too long: \"{lexeme}\"\n"
-        error_message += f"\n{lexeme:<12} line {line_num} cols {start_col}-{end_col} is T_Identifier (truncated to {truncated_lexeme})\n)"
+        error_message += f"\n{lexeme:<12} line {line_num} cols {start_col}-{end_col} is T_Identifier (truncated to {truncated_lexeme})\n"
     
     if error_message == "T_INVALID_DIRECTIVE":
         error_message = f"Invalid # directive"
@@ -184,7 +184,6 @@ def tokenize(source_code):
             lexeme, line_num, start_col, end_col, token_type, value = handle_error((line.strip(), line_num, 1, len(line.strip()), "T_Error", "T_INVALID_DIRECTIVE"))
             tokens.append((lexeme, line_num, start_col, end_col, token_type, value))  # Append the error message
             continue  # Skip the rest of the line
-
 
         while column < len(line):
             # Check for string constants

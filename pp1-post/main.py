@@ -53,7 +53,7 @@ def main2():
                 print(f"⚠️ Missing .out file for: {filename}")
 
 def main():
-    filename = r"pp1-post\samples\badpre.frag"
+    filename = r"pp1-post\samples\badident.frag"
     try:
         with open(filename, 'r') as file:
             tokens = tokenize(file.read())
