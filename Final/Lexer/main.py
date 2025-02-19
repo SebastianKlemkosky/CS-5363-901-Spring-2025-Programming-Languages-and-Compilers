@@ -78,7 +78,7 @@ def TestCase():
 def main():
     # Set up argument parsing to dynamically get the filename
     parser = argparse.ArgumentParser(description='Process a source code file.')
-    parser.add_argument('file', type=str, help='Path to the source code file')  # Expect the file as an argument
+    parser.add_argument('file', type=str, help='Path to the source code file')  # Expects the file as an argument
     args = parser.parse_args()
 
     # Get the filename from the command-line arguments

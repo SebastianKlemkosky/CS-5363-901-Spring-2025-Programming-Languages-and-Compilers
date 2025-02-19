@@ -35,12 +35,12 @@ OPERATORS = {
     ".": "'.'"  
 }
 
-MAX_IDENTIFIER_LENGTH = 31  # Example maximum length for identifiers
+MAX_IDENTIFIER_LENGTH = 31  #maximum length for identifiers
 
 # Regex Patterns
-HEX_PATTERN = re.compile(r'0[xX][0-9a-fA-F]+')  # Matches hexadecimal numbers
-DOUBLE_PATTERN = re.compile(r'\d+\.\d*([eE][+-]?\d+)?')  # Ensures a digit before `.`
-INT_PATTERN = re.compile(r'\d+')
+HEX_PATTERN = re.compile(r'0[xX][0-9a-fA-F]+')  # hexadecimal numbers
+DOUBLE_PATTERN = re.compile(r'\d+\.\d*([eE][+-]?\d+)?')  # doubles 
+INT_PATTERN = re.compile(r'\d+')        # ints
 
 STRING_PATTERN = re.compile(r'"([^"\\\n]*(\\.[^"\\\n]*)*)"')
 SINGLE_LINE_COMMENT = re.compile(r"//.*")
@@ -49,16 +49,15 @@ IDENTIFIER_PATTERN = re.compile(r'[a-zA-Z][a-zA-Z0-9_]*')
 OPERATOR_PATTERN = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
 UNTERMINATED_STRING_PATTERN = re.compile(r'"[^"\n]*$')
 
-### **Helper Functions**
 
 def remove_comments(source_code):
-    """Removes comments while preserving line numbers."""
+    """Removes comments but also preserving line numbers."""
     source_code = re.sub(SINGLE_LINE_COMMENT, lambda m: " " * len(m.group(0)), source_code)
     source_code = re.sub(MULTI_LINE_COMMENT, lambda m: "\n" * m.group(0).count("\n"), source_code)
     return source_code
 
 def match_string(line, column):
-    """Matches valid and unterminated string constants."""
+    """Matches valid and unterminated strings."""
     match = STRING_PATTERN.match(line, column)  # Check for valid strings
     if match:
         lexeme = match.group(0)
@@ -73,7 +72,7 @@ def match_string(line, column):
     return None
 
 def match_number(line, column):
-    """Matches integer, hexadecimal, and double constants using regex, ensuring .12 is invalid."""
+    """Matches integer, hexadecimal, and doubles using regex"""
     
     # Check for hexadecimal numbers
     match = HEX_PATTERN.match(line[column:])
@@ -150,7 +149,7 @@ def match_identifier(line, column):
     return None  # No match found
 
 def handle_error(token):
-    """Handles tokens with T_Error by printing an error message."""
+    """Handles tokens with T_Error and formats our error message."""
     lexeme, line_num, start_col, end_col, token_type, error_message = token
 
     if error_message == "T_UNTERMINATED_STRING_CONSTANT":
@@ -178,9 +177,8 @@ def tokenize(source_code):
     for line_num, line in enumerate(lines, start=1):
         column = 0
 
-        # Check for # directives (e.g., #define)
+        # Check for # directives (e.g., #define) // MACROS
         if line.strip().startswith("#"):
-            # Report invalid # directive by passing to handle_error()
             lexeme, line_num, start_col, end_col, token_type, value = handle_error((line.strip(), line_num, 1, len(line.strip()), "T_Error", "T_INVALID_DIRECTIVE"))
             tokens.append((lexeme, line_num, start_col, end_col, token_type, value))  # Append the error message
             continue  # Skip the rest of the line
@@ -235,6 +233,6 @@ def tokenize(source_code):
                 column += length
                 continue
 
-            column += 1  # Move to next character if no match
+            column += 1  # Move to next character if there is no matches
 
     return tokens
