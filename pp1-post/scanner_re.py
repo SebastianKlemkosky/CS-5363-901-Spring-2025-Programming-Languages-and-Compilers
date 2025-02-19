@@ -117,7 +117,7 @@ def match_operator(line, column):
         lexeme = match.group(0)
 
         # Check if the lexeme is in the OPERATORS dictionary
-        token_type = OPERATORS.get(lexeme, "Unknown")  # Default to T_Error if unknown operator
+        token_type = OPERATORS.get(lexeme, "Unknown")
         
         return lexeme, token_type, None, len(lexeme)
     
