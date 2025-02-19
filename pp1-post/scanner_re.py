@@ -3,10 +3,10 @@ import string
 
 # Reserved keywords
 KEYWORDS = {
-    "void": "T_Void ", "int": "T_Int ", "double": "T_Double ", "bool": "T_Bool ", "string": "T_String ",
-    "null": "T_Null ", "for": "T_For ", "while": "T_While ", "if": "T_If ", "else": "T_Else ",
-    "return": "T_Return ", "break": "T_Break ", "Print ": "T_Print ", "ReadInteger ": "T_ReadInteger ",
-    "ReadLine": "T_ReadLine "
+    "void": "T_Void", "int": "T_Int", "double": "T_Double", "bool": "T_Bool", "string": "T_String",
+    "null": "T_Null", "for": "T_For", "while": "T_While", "if": "T_If", "else": "T_Else",
+    "return": "T_Return", "break": "T_Break", "Print ": "T_Print", "ReadInteger": "T_ReadInteger",
+    "ReadLine": "T_ReadLine"
 }
 
 # Boolean Constants
@@ -14,25 +14,25 @@ BOOLEAN_CONSTANTS = {"true", "false"}
 
 # Operators & Punctuation
 OPERATORS = {
-    "||": "T_Or ", 
-    "<=": "T_LessEqual ", 
-    ">=": "T_GreaterEqual ", 
-    "==": "T_Equal ",
-    "+": "'+' ",  
-    "-": "'-' ",  
-    "*": "'*' ",  
-    "/": "'/' ",  
-    "<": "'<' ",  
-    ">": "'>' ",  
-    "=": "'=' ",  
-    ";": "';' ",  
-    ",": "',' ",  
-    "!": "'!' ",  
-    "{": "'{' ",  
-    "}": "'}' ",  
-    "(": "'(' ",  
-    ")": "')' ",
-    ".": "'.' "  
+    "||": "T_Or", 
+    "<=": "T_LessEqual", 
+    ">=": "T_GreaterEqual", 
+    "==": "T_Equal",
+    "+": "'+'",  
+    "-": "'-'",  
+    "*": "'*'",  
+    "/": "'/'",  
+    "<": "'<'",  
+    ">": "'>'",  
+    "=": "'='",  
+    ";": "';'",  
+    ",": "','",  
+    "!": "'!'",  
+    "{": "'{'",  
+    "}": "'}'",  
+    "(": "'('",  
+    ")": "')'",
+    ".": "'.'"  
 }
 
 MAX_IDENTIFIER_LENGTH = 31  # Example maximum length for identifiers
@@ -82,12 +82,13 @@ def match_number(line, column):
         value = int(lexeme, 16)  # Convert to integer using base 16
         return lexeme, "T_HexConstant", value, len(lexeme)
 
+    
     # Check for invalid .12 cases (but return . as an operator)
     if line[column] == ".":
         if column + 1 < len(line) and line[column + 1].isdigit():
-            return ".", "T_Operator", 1  # ✅ Return `.` as an operator
+            return ".","'.'"  , None, 1  #Return `.` as an operator
         
-        return ".", "T_Operator", 1  # If it's a standalone `.`
+        return ".", "'.'" , None, 1  # If it's a standalone `.`
 
     # Check for floating-point numbers (valid doubles)
     match = DOUBLE_PATTERN.match(line[column:])
@@ -116,16 +117,12 @@ def match_operator(line, column):
         lexeme = match.group(0)
 
         # Check if the lexeme is in the OPERATORS dictionary
-        token_type = OPERATORS.get(lexeme, "T_Error")  # Default to T_Error if unknown operator
+        token_type = OPERATORS.get(lexeme, "Unknown")  # Default to T_Error if unknown operator
         
-        # If it's an unrecognized operator, return an error
-        if token_type == "T_Error":
-            return lexeme, "T_Error", f"Unrecognized operator: \"{lexeme}\"", len(lexeme)
-
-        # Otherwise, return the valid operator token
-        return lexeme, token_type, len(lexeme)
+        return lexeme, token_type, None, len(lexeme)
     
-    return None  # No match found
+      # No match found
+    return line[column], "T_Error", f"Unrecognized char: \"{line[column]}\"", len(line[column])
 
 
 def match_identifier(line, column):
@@ -138,7 +135,7 @@ def match_identifier(line, column):
         if len(lexeme) > MAX_IDENTIFIER_LENGTH:
             truncated_lexeme = lexeme[:MAX_IDENTIFIER_LENGTH]
             # Return the truncated identifier with an error message #Have some identifier for this issue lexme twice
-            return lexeme, "T_Error", f"Identifier too long: \"{lexeme}\"", len(lexeme), truncated_lexeme
+            return lexeme, "T_Error", f"Identifier too long: \"{lexeme}\"", len(lexeme)
 
         # Check if it's a boolean constant
         if lexeme in BOOLEAN_CONSTANTS:
@@ -149,10 +146,14 @@ def match_identifier(line, column):
             return lexeme, KEYWORDS[lexeme], lexeme, len(lexeme)
 
         # Otherwise, it's a regular identifier
-        return lexeme, "T_Identifier ", len(lexeme)
+        return lexeme, "T_Identifier", None, len(lexeme)
 
     return None  # No match found
 
+def handle_error(token):
+    """Handles tokens with T_Error by printing an error message."""
+    lexeme, line_num, start_col, end_col, token_type, error_message = token
+    
 
 def tokenize(source_code):
     """Scans source code and returns tokens."""
@@ -163,61 +164,51 @@ def tokenize(source_code):
     for line_num, line in enumerate(lines, start=1):
         column = 0
 
+
         while column < len(line):
             # Check for string constants
             result = match_string(line, column)
             if result:
-                if len(result) == 3:  # Valid string
-                    lexeme, value, length = result
-                    tokens.append((lexeme, line_num, column + 1, column + length, "T_StringConstant ", value))
-                elif len(result) == 4:  # Unterminated string
-                    lexeme, token_type, error_message, length = result
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, error_message))
+                lexeme, token_type, value, length = result
+                if token_type == "T_Error":
+                    handle_error((lexeme, line_num, column + 1, column + length, token_type, value))
+                else:
+                    tokens.append((lexeme, line_num, column + 1, column + length, "T_StringConstant", lexeme))
                 column += length
                 continue
 
             # Check for numbers (hex, double, int)
             result = match_number(line, column)
             if result:
-                if len(result) == 4:  # Valid double
-                    lexeme, token_type, value, length = result
+                lexeme, token_type, value, length = result
+                if token_type == "T_Error":
+                    handle_error((lexeme, line_num, column + 1, column + length, token_type, value))
+                else:
                     tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
-                    column += length
-                elif len(result) == 3:  # Invalid double
-                    lexeme, token_type, length = result
-                    token_type = OPERATORS.get(lexeme, "Unknown")
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type))
-                    column += length
-                continue
-
-            # Check for operators & punctuation
-            result = match_operator(line, column)
-            if result:
-                lexeme, token_type, length = result
-                tokens.append((lexeme, line_num, column + 1, column + length, token_type))
                 column += length
                 continue
+
+
 
             # Check for identifiers & keywords
             result = match_identifier(line, column)
             if result:
-                if len(result) == 3:  # identifiers with no values
-                    lexeme, token_type, length = result
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type))
-                    column += length
-                if len(result) == 4:  # identifiers with values
-                    lexeme, token_type, value, length = result
-                    tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
-                    column += length
-                
-                elif len(result) == 5:  # Identifiers with values and truncation
-                        lexeme, token_type, value, length, truncated_lexeme = result
-                        if token_type == 'T_Error':
-                            tokens.append((lexeme, line_num, column + 1, column + length, token_type, value, truncated_lexeme, 'T_Identifier'))
-                            column += length  # Update the column based on the truncated length
+                lexeme, token_type, value, length = result
+                tokens.append((lexeme, line_num, column + 1, column + length, token_type, value))
+                column += length
                 continue
 
 
+            # Check for operators & punctuation
+            result = match_operator(line, column)
+            if result:
+                lexeme, token_type, value, length = result
+                if token_type == "T_Error":
+                    handle_error((lexeme, line_num, column + 1, column + length, token_type, value))
+                else:
+                    tokens.append((lexeme, line_num, column + 1, column + length, token_type))
+                column += length
+                continue
 
             column += 1  # Move to next character if no match
 

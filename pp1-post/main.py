@@ -19,10 +19,10 @@ def main2():
                 actual_output = []
                 for token in tokens:
 
-                    if len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier':
+                    if len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier' and token[5] != None: 
                         actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
                     else:
-                        actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]}")
+                        actual_output.append(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} ")
 
                 # Read expected .out file
                 with open(out_file, 'r') as expected_file:
@@ -55,15 +55,15 @@ def main():
             tokens = tokenize(file.read())
             for token in tokens:
   
-                if len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier ' and token[4] != 'T_Error':
+                if len(token) == 6 and token[4] not in KEYWORDS.values() and token[4] != 'T_Identifier ' and token[5] != None:
                     print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} (value = {token[5]})")
                 else:
-                    print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]}")
+                    print(f"{token[0]:<12} line {token[1]} cols {token[2]}-{token[3]} is {token[4]} ")
 
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
 
 if __name__ == "__main__":
-    main()
+    main2()
 
 
