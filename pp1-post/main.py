@@ -4,7 +4,7 @@ import argparse
 
 def TestCases():
     """Runs lexer tests on all .frag files in /samples and compares with expected .out files."""
-    directory = r"Final\Lexer\samples"
+    directory = r"pp1-post\samples"
     
     for filename in os.listdir(directory):
         if filename.endswith(".frag"):  # Process only .frag files
@@ -54,7 +54,7 @@ def TestCases():
                 print(f"⚠️ Missing .out file for: {filename}")
 
 def TestCase():
-    filename = r"Final\Lexer\samples\badbool.frag"
+    filename = r"pp1-post\samples\badbool.frag"
     try:
         with open(filename, 'r') as file:
             tokens = tokenize(file.read())
