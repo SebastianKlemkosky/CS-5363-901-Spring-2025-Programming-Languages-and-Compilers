@@ -54,7 +54,7 @@ def TestCases():
                 print(f"⚠️ Missing .out file for: {filename}")
 
 def TestCase():
-    filename = r"pp1-post\samples\badbool.frag"
+    filename = r"pp1-post\samples\program.decaf"
     try:
         with open(filename, 'r') as file:
             tokens = tokenize(file.read())
@@ -76,6 +76,6 @@ def TestCase():
         print(f"Error: File '{filename}' not found.")
 
 if __name__ == "__main__":
-    TestCases()
+    TestCase()
 
 
