@@ -23,9 +23,7 @@ def main():
     # Step 3: Parser Phase
     
     ast = parse(tokens)
-    print(ast)
-  
-
+    print(ast)   
 
 if __name__ == "__main__":
     main()
