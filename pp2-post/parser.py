@@ -117,10 +117,16 @@ def format_call(node, indent=0):
     line_num = call.get('line_num', '')
     lines.append(f"{spacing}{line_num:<3}   (args) Call:")
     lines.append(f"{spacing}{line_num:<3}      Identifier: {call['identifier']}")
-    lines.append(f"{spacing}{line_num:<3}      (actuals)")
-    # Directly format the FieldAccess here without nesting again
-    lines.extend(format_node(call['actuals'], indent + 9))
+    lines.append(f"{spacing}{line_num:<3}      (actuals):")
+    
+    # Flatten actuals: just print Identifier directly
+    actual = call['actuals']
+    if 'FieldAccess' in actual:
+        fa = actual['FieldAccess']
+        lines.append(f"{spacing}{fa['line_num']:<3}         Identifier: {fa['identifier']}")
+
     return lines
+
 
 
 
