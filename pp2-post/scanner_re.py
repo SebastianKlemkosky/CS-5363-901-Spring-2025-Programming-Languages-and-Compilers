@@ -14,6 +14,7 @@ BOOLEAN_CONSTANTS = {"true", "false"}
 
 # Operators & Punctuation
 OPERATORS = {
+    "&&": "T_And",
     "||": "T_Or", 
     "<=": "T_LessEqual", 
     ">=": "T_GreaterEqual", 
@@ -46,9 +47,8 @@ STRING_PATTERN = re.compile(r'"([^"\\\n]*(\\.[^"\\\n]*)*)"')
 SINGLE_LINE_COMMENT = re.compile(r"//.*")
 MULTI_LINE_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 IDENTIFIER_PATTERN = re.compile(r'[a-zA-Z][a-zA-Z0-9_]*')
-OPERATOR_PATTERN = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
+#OPERATOR_PATTERN = re.compile(r"\|\||<=|>=|==|[+\-*/<>=;,!{}()]")
 UNTERMINATED_STRING_PATTERN = re.compile(r'"[^"\n]*$')
-
 
 def remove_comments(source_code):
     """Removes comments but also preserving line numbers."""
@@ -111,15 +111,21 @@ def match_number(line, column):
 
 def match_operator(line, column):
     """Matches operators and punctuation."""
-    match = OPERATOR_PATTERN.match(line, column)
-    if match:
-        lexeme = match.group(0)
 
-        # Check if the lexeme is in the OPERATORS dictionary
-        token_type = OPERATORS.get(lexeme, "Unknown")
-        return lexeme, token_type, None, len(lexeme)
-    
-      # No match found
+    # Try two-character operators first
+    if column + 1 < len(line):
+        two_char = line[column:column+2]
+        if two_char in OPERATORS:
+            token_type = OPERATORS[two_char]
+            return two_char, token_type, None, 2
+
+    # Then single-character operators
+    if line[column] in OPERATORS:
+        lexeme = line[column]
+        token_type = OPERATORS[lexeme]
+        return lexeme, token_type, None, 1
+
+    # If still unmatched, treat as an unrecognized char
     if line[column] != " ":
         return line[column], "T_Error", "T_UNRECOGNIZED_CHAR", 1
     return None

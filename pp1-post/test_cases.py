@@ -76,6 +76,6 @@ def TestCase():
         print(f"Error: File '{filename}' not found.")
 
 if __name__ == "__main__":
-    TestCase()
+    TestCases()
 
 
