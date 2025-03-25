@@ -8,7 +8,6 @@ precedence = {
     '/': 2
 }
 
-
 # Parse Functions
 def parse(token_stream):
     tokens = token_stream
@@ -499,5 +498,17 @@ def parse_expression_leaf(tokens, index, current_token):
         }
         index, current_token = advance(tokens, index)
         return node, index, current_token
+
+
+    if lookahead(current_token, "T_StringConstant"):
+        node = {
+            "StringConstant": {
+                "line_num": line_num,
+                "value": current_token[0]
+            }
+        }
+        index, current_token = advance(tokens, index)
+        return node, index, current_token
+
 
     return syntax_error(tokens, index, "Unrecognized expression"), index, current_token

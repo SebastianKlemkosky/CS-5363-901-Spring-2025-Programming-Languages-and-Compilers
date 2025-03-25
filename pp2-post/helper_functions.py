@@ -10,11 +10,14 @@ def lookahead(current_token, expected_type):
     return current_token is not None and current_token[4] == expected_type
     
 """Prints a syntax error message and exits."""
-def syntax_error(tokens, index, msg="syntax error"):
+"""Prints a syntax error message and returns a dict."""
+def syntax_error(tokens, index, msg="syntax error", line_num=None):
     if index < len(tokens):
-        line_num = tokens[index][1]
+        token = tokens[index]
+        # Prefer passed-in line_num, fall back to token
+        line_num = line_num if line_num is not None else token[1]
+        start_col = token[2]
         error_line = get_line_content(tokens, line_num)
-        start_col = tokens[index][2]
         pointer_line = ' ' * (start_col - 1) + '^'
 
         error_msg = (
@@ -27,6 +30,7 @@ def syntax_error(tokens, index, msg="syntax error"):
         error_msg = f"*** Error at EOF\n*** {msg}"
 
     return {"SyntaxError": error_msg}
+
 
 def get_line_content(tokens, line_num):
     line_tokens = [tok[0] for tok in tokens if tok[1] == line_num]

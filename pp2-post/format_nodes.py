@@ -8,7 +8,6 @@ def format_program(node, indent=0):
         lines.extend(format_node(child, indent + 2))
     return lines
 
-
 def format_function_declaration(node, indent=0):
     lines = []
     spacing = ' ' * indent
@@ -44,9 +43,14 @@ def format_print_statement(node, indent=0):
     lines.append(f"{line_prefix('')}PrintStmt:")
 
     for arg in stmt['args']:
-        # Each arg gets its own (args) prefix and formatting
-        lines.append(f"{line_prefix(line_num)}   (args)")
-        lines.extend(format_node(arg, indent + 6))
+        if 'StringConstant' in arg:
+            string_val = arg['StringConstant']['value']
+            lines.append(f"{line_prefix(line_num)}   (args) StringConstant: {string_val}")
+        else:
+            lines.append(f"{line_prefix(line_num)}   (args)")
+            lines.extend(format_node(arg, indent + 6))
+
+
 
     return lines
 
@@ -83,6 +87,8 @@ def format_node(node, indent=0):
         return format_double_constant(node, indent)
     elif 'ReadIntegerExpr' in node:
         return format_read_integer_expr(node, indent)
+    elif 'StringConstant' in node:
+        return format_string_constant(node, indent)
     else:
         return []
 
@@ -100,7 +106,12 @@ def format_call(node, indent=0):
 
     return lines
 
-
+def format_string_constant(node, indent=0):
+    lines = []
+    const = node['StringConstant']
+    line_num = const.get('line_num', '')
+    lines.append(f"{line_prefix(line_num)}   StringConstant: {const['value']}")
+    return lines
 
 def format_int_constant(node, indent=0):
     lines = []
@@ -193,7 +204,6 @@ def format_logical_expression(node, indent=0):
         lines.append(f"{line_prefix(line_num)}      (Malformed LogicalExpr)")
 
     return lines
-
 
 def format_equality_expression(node, indent=0):
     lines = []
