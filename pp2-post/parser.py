@@ -138,7 +138,6 @@ def parse_statement_block(tokens, index, current_token):
 
     return {"StmtBlock": statements}, index, current_token
 
-
 def parse_statement(tokens, index, current_token):
     if lookahead(current_token, "T_Print"):
         return parse_print_statement(tokens, index, current_token)
