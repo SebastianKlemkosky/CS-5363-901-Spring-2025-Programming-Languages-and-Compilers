@@ -1,7 +1,4 @@
-   Program:
-  1   FnDecl:
-   (return type) Type: void
-  1     Identifier: main
-   (body) StmtBlock:
-   PrintStmt:
-  2     (args) StringConstant: "hello world"
+*** Error line 6.
+while ( a < 10 ) {
+           ^
+*** Expected identifier after type
