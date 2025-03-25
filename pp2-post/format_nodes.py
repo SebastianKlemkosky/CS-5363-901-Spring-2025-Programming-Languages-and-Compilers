@@ -42,7 +42,12 @@ def format_print_statement(node, indent=0):
     stmt = node['PrintStmt']
     line_num = stmt.get('line_num', '')
     lines.append(f"{line_prefix('')}PrintStmt:")
-    lines.extend(format_node(stmt['args'], indent + 6))
+
+    for arg in stmt['args']:
+        # Each arg gets its own (args) prefix and formatting
+        lines.append(f"{line_prefix(line_num)}   (args)")
+        lines.extend(format_node(arg, indent + 6))
+
     return lines
 
 def format_node(node, indent=0):
@@ -66,8 +71,18 @@ def format_node(node, indent=0):
         return format_arithmetic_expression(node, indent)
     elif 'FieldAccess' in node:
         return format_field_access(node, indent)
+    elif 'LogicalExpr' in node:
+        return format_logical_expression(node, indent)
+    elif 'EqualityExpr' in node:
+        return format_equality_expression(node, indent)
+    elif 'RelationalExpr' in node:
+        return format_relational_expression(node, indent)
     elif 'IntConstant' in node:
         return format_int_constant(node, indent)
+    elif 'DoubleConstant' in node:
+        return format_double_constant(node, indent)
+    elif 'ReadIntegerExpr' in node:
+        return format_read_integer_expr(node, indent)
     else:
         return []
 
@@ -89,10 +104,17 @@ def format_call(node, indent=0):
 
 def format_int_constant(node, indent=0):
     lines = []
-    spacing = ' ' * indent
     const = node['IntConstant']
     line_num = const.get('line_num', '')
-    lines.append(f"{line_prefix(line_num)}      IntConstant: {const['value']}")
+    lines.append(f"{line_prefix(line_num)}   IntConstant: {const['value']}")
+    return lines
+
+def format_double_constant(node, indent=0):
+    lines = []
+    spacing = ' ' * indent
+    const = node['DoubleConstant']
+    line_num = const.get('line_num', '')
+    lines.append(f"{line_prefix(line_num)}   DoubleConstant: {const['value']}")
     return lines
 
 def format_assignment_expression(node, indent=0):
@@ -143,6 +165,43 @@ def format_variable_declaration(node, indent=0):
     lines.append(f"{line_prefix(line_num)} VarDecl: ")
     lines.append(f"{spacing}        Type: {var['type']}")
     lines.append(f"{line_prefix(line_num)}    Identifier: {var['identifier']}")
+    return lines
+
+def format_read_integer_expr(node, indent=0):
+    lines = []
+    expr = node['ReadIntegerExpr']
+    line_num = expr.get('line_num', '')
+    lines.append(f"{line_prefix(line_num)}   ReadIntegerExpr:")
+    return lines
+
+def format_logical_expression(node, indent=0):
+    lines = []
+    expr = node['LogicalExpr']
+    line_num = expr.get('line_num', '')
+    lines.append(f"{line_prefix(line_num)}   LogicalExpr:")
+    lines.extend(format_node(expr['left'], indent + 6))
+    lines.append(f"{line_prefix(line_num)}      Operator: {expr['operator']}")
+    lines.extend(format_node(expr['right'], indent + 6))
+    return lines
+
+def format_equality_expression(node, indent=0):
+    lines = []
+    expr = node['EqualityExpr']
+    line_num = expr.get('line_num', '')
+    lines.append(f"{line_prefix(line_num)}   EqualityExpr:")
+    lines.extend(format_node(expr['left'], indent + 6))
+    lines.append(f"{line_prefix(line_num)}      Operator: {expr['operator']}")
+    lines.extend(format_node(expr['right'], indent + 6))
+    return lines
+
+def format_relational_expression(node, indent=0):
+    lines = []
+    expr = node['RelationalExpr']
+    line_num = expr.get('line_num', '')
+    lines.append(f"{line_prefix(line_num)}   RelationalExpr:")
+    lines.extend(format_node(expr['left'], indent + 6))
+    lines.append(f"{line_prefix(line_num)}      Operator: {expr['operator']}")
+    lines.extend(format_node(expr['right'], indent + 6))
     return lines
 
 def format_ast_string(ast_dict):
