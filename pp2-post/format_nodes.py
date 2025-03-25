@@ -94,12 +94,12 @@ def format_call(node, indent=0):
     lines.append(f"{line_prefix(line_num)}      Identifier: {call['identifier']}")
     lines.append(f"{line_prefix('')}(actuals):")
 
-    # Flatten actuals
-    actual = call['actuals']
-    if 'FieldAccess' in actual:
-        fa = actual['FieldAccess']
-        lines.append(f"{line_prefix(fa['line_num'])}      Identifier: {fa['identifier']}")
+    actuals = call['actuals']
+    for actual in actuals:
+        lines.extend(format_node(actual, indent + 6))
+
     return lines
+
 
 
 def format_int_constant(node, indent=0):
@@ -179,10 +179,21 @@ def format_logical_expression(node, indent=0):
     expr = node['LogicalExpr']
     line_num = expr.get('line_num', '')
     lines.append(f"{line_prefix(line_num)}   LogicalExpr:")
-    lines.extend(format_node(expr['left'], indent + 6))
-    lines.append(f"{line_prefix(line_num)}      Operator: {expr['operator']}")
-    lines.extend(format_node(expr['right'], indent + 6))
+
+    if 'left' in expr and 'right' in expr:
+        # Binary expression (e.g., a && b)
+        lines.extend(format_node(expr['left'], indent + 6))
+        lines.append(f"{line_prefix(line_num)}      Operator: {expr['operator']}")
+        lines.extend(format_node(expr['right'], indent + 6))
+    elif 'right' in expr:
+        # Unary expression (e.g., !true)
+        lines.append(f"{line_prefix(line_num)}      Operator: {expr['operator']}")
+        lines.extend(format_node(expr['right'], indent + 6))
+    else:
+        lines.append(f"{line_prefix(line_num)}      (Malformed LogicalExpr)")
+
     return lines
+
 
 def format_equality_expression(node, indent=0):
     lines = []

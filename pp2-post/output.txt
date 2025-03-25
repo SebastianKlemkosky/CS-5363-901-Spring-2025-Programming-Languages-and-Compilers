@@ -75,6 +75,35 @@
  16     (args) Call:
  16        Identifier: foo
    (actuals):
+ 16        FieldAccess:
+ 16           Identifier: a
+ 16        FieldAccess:
+ 16           Identifier: d
+ 16     LogicalExpr:
+ 16        Operator: !
  17     (args) Call:
  17        Identifier: foo
    (actuals):
+ 17   ArithmeticExpr:
+ 17        FieldAccess:
+ 17           Identifier: a
+ 17        Operator: +
+ 17     IntConstant: 2
+ 17   ArithmeticExpr:
+ 17        FieldAccess:
+ 17           Identifier: d
+ 17        Operator: /
+ 17     IntConstant: 2
+ 17     LogicalExpr:
+ 17     EqualityExpr:
+ 17        FieldAccess:
+ 17           Identifier: a
+ 17        Operator: ==
+ 17        FieldAccess:
+ 17           Identifier: b
+ 17        Operator: &&
+ 17     RelationalExpr:
+ 17        FieldAccess:
+ 17           Identifier: d
+ 17        Operator: >=
+ 17     DoubleConstant: 1.0
