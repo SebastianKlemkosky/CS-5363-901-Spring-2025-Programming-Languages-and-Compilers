@@ -115,34 +115,39 @@ def parse_declaration(tokens, index, current_token):
         return syntax_error(tokens, index, "Expected '(' or ';' after identifier"), index, current_token
 
 def parse_statement_block(tokens, index, current_token):
-    statements = []
 
-    if not lookahead(current_token, "'{'"):
-        return syntax_error(tokens, index, "Expected '{' to begin block"), index, current_token
     index, current_token = advance(tokens, index)  # consume '{'
+    statements = []
+    prev_index = -1
 
-    while current_token is not None and not lookahead(current_token, "'}'"):
-        start_index = index  # track index before parsing
-        stmt_node, index, current_token = parse_statement(tokens, index, current_token)
-        statements.append(stmt_node)
-
-        # Prevent infinite loop by checking if token stream advanced
-        if index == start_index:
+    while current_token and not lookahead(current_token, "'}'"):
+        if index == prev_index:
             print("*** Internal error: parser did not advance on statement. Breaking loop to avoid infinite loop.")
             break
+        prev_index = index
 
-    if not lookahead(current_token, "'}'"):
+        stmt_node, index, current_token = parse_statement(tokens, index, current_token)
+
+        if stmt_node is not None:
+            statements.append(stmt_node)
+
+    if lookahead(current_token, "'}'"):
+        index, current_token = advance(tokens, index)
+    else:
         return syntax_error(tokens, index, "Expected '}' at end of block"), index, current_token
-    index, current_token = advance(tokens, index)  # consume '}'
 
     return {"StmtBlock": statements}, index, current_token
 
 def parse_statement(tokens, index, current_token):
+    print(f"[DEBUG] parse_statement received Token at line {current_token}")
+
     if lookahead(current_token, "T_Print"):
         return parse_print_statement(tokens, index, current_token)
 
-    elif lookahead(current_token, "T_Return"):
+    if lookahead(current_token, "T_Return"):
+        print(f"[DEBUG] parse_statement received T_Return at line {current_token[1]}")
         return parse_return_statement(tokens, index, current_token)
+
 
     elif lookahead(current_token, "T_Int") or \
         lookahead(current_token, "T_Double") or \
@@ -150,34 +155,53 @@ def parse_statement(tokens, index, current_token):
         lookahead(current_token, "T_String"):
         return parse_variable_declaration(tokens, index, current_token)
 
+    elif lookahead(current_token, "T_While"):
+        return parse_while_statement(tokens, index, current_token)
+    
+    elif lookahead(current_token, "T_For"):
+        return parse_for_statement(tokens, index, current_token)
+    
+    elif lookahead(current_token, "T_If"):
+        return parse_if_statement(tokens, index, current_token)
+
+    elif lookahead(current_token, "T_Break"):
+        return parse_break_statement(tokens, index, current_token)
 
     elif lookahead(current_token, "T_Identifier"):
-        # Peek ahead to distinguish assignment vs. call
         next_token = tokens[index + 1] if index + 1 < len(tokens) else None
 
         if next_token and next_token[4] == "'='":
             return parse_assignment(tokens, index, current_token)
 
         elif next_token and next_token[4] == "'('":
-            # Parse standalone Call statement (e.g., foo(...);)
             call_node, index, current_token = parse_call(tokens, index, current_token)
-
             if not lookahead(current_token, "';'"):
                 return syntax_error(tokens, index, "Expected ';' after function call"), index, current_token
-            index, current_token = advance(tokens, index)  # consume ';'
-
+            index, current_token = advance(tokens, index)
             return call_node, index, current_token
 
         else:
+            # 🟢 Try parsing it as an expression statement (like: a;)
+            try_expr_node, try_index, try_token = parse_expression_statement(tokens, index, current_token)
+            if isinstance(try_expr_node, dict) and "SyntaxError" not in try_expr_node:
+                return try_expr_node, try_index, try_token
+
+            # fallback error
             return syntax_error(tokens, index, "Unexpected identifier usage"), index, current_token
 
+
     else:
-    # Avoid infinite loop by consuming the current token
+
+        try_expr_node, try_index, try_token = parse_expression_statement(tokens, index, current_token)
+        if isinstance(try_expr_node, dict) and "SyntaxError" not in try_expr_node:
+            return try_expr_node, try_index, try_token
+
+        # Still failed — throw error and advance
         line_num = current_token[1] if current_token else -1
         index, current_token = advance(tokens, index)
         return syntax_error(tokens, index, "Unknown statement type", line_num), index, current_token
-    
-def parse_assignment(tokens, index, current_token):
+  
+def parse_assignment(tokens, index, current_token, require_semicolon=True):
     line_num = current_token[1]
     target_token = current_token
     index, current_token = advance(tokens, index)
@@ -191,9 +215,11 @@ def parse_assignment(tokens, index, current_token):
     if isinstance(expr_node, dict) and "SyntaxError" in expr_node:
         return expr_node, index, current_token
 
-    if not lookahead(current_token, "';'"):
-        return syntax_error(tokens, index, "Expected ';' after assignment"), index, current_token
-    index, current_token = advance(tokens, index)  # consume ';'
+    if require_semicolon:
+        if not lookahead(current_token, "';'"):
+            return syntax_error(tokens, index, "Expected ';' after assignment"), index, current_token
+        index, current_token = advance(tokens, index)
+
 
     node = {
         "AssignExpr": {
@@ -241,15 +267,23 @@ def parse_return_statement(tokens, index, current_token):
     line_num = current_token[1]
     index, current_token = advance(tokens, index)  # consume 'return'
 
-    # Parse expression directly (no parentheses)
+    # ✅ Case: return with no expression
+    if lookahead(current_token, "';'"):
+        index, current_token = advance(tokens, index)
+        return {
+            "ReturnStmt": {
+                "line_num": line_num,
+                "expr": {"Empty": True}
+            }
+        }, index, current_token
+
+    # ✅ Case: return with expression
     expr_node, index, current_token = parse_expression(tokens, index, current_token)
-    if isinstance(expr_node, dict) and "SyntaxError" in expr_node:
-        return expr_node, index, current_token
 
     if not lookahead(current_token, "';'"):
         return syntax_error(tokens, index, "Expected ';' after return expression"), index, current_token
-    index, current_token = advance(tokens, index)  # consume ';'
 
+    index, current_token = advance(tokens, index)
     return {
         "ReturnStmt": {
             "line_num": line_num,
@@ -334,8 +368,163 @@ def parse_call(tokens, index, current_token):
 
     return node, index, current_token
 
+def parse_while_statement(tokens, index, current_token):
+    line_num = current_token[1]
+    index, current_token = advance(tokens, index)  # consume 'while'
+
+    if not lookahead(current_token, "'('"):
+        return syntax_error(tokens, index, "Expected '(' after 'while'"), index, current_token
+    index, current_token = advance(tokens, index)  # consume '('
+
+    test_expr, index, current_token = parse_expression(tokens, index, current_token)
+
+    if not lookahead(current_token, "')'"):
+        return syntax_error(tokens, index, "Expected ')' after while condition"), index, current_token
+    index, current_token = advance(tokens, index)  # consume ')'
+
+    body_node, index, current_token = parse_statement_block(tokens, index, current_token)
+
+    node = {
+        "WhileStmt": {
+            "line_num": line_num,
+            "test": test_expr,
+            "body": body_node
+        }
+    }
+
+    return node, index, current_token
+
+def parse_if_statement(tokens, index, current_token):
+    line_num = current_token[1]
+    index, current_token = advance(tokens, index)  # consume 'if'
+
+    if not lookahead(current_token, "'('"):
+        return syntax_error(tokens, index, "Expected '(' after 'if'"), index, current_token
+    index, current_token = advance(tokens, index)
+
+    test_expr, index, current_token = parse_expression(tokens, index, current_token)
+
+    if not lookahead(current_token, "')'"):
+        return syntax_error(tokens, index, "Expected ')' after if condition"), index, current_token
+    index, current_token = advance(tokens, index)
+
+    start_index = index
+    then_stmt, index, current_token = parse_statement(tokens, index, current_token)
+    if index == start_index:
+        return syntax_error(tokens, index, "Statement did not advance after 'if'"), index, current_token
+
+    # Check for optional else
+    else_stmt = None
+    if lookahead(current_token, "T_Else"):
+        index, current_token = advance(tokens, index)
+        else_start_index = index
+        else_stmt, index, current_token = parse_statement(tokens, index, current_token)
+        if index == else_start_index:
+            return syntax_error(tokens, index, "Statement did not advance after 'else'"), index, current_token
+
+
+    node = {
+        "IfStmt": {
+            "line_num": line_num,
+            "test": test_expr,
+            "then": then_stmt
+        }
+    }
+
+    if else_stmt:
+        node["IfStmt"]["else"] = else_stmt
+
+    return node, index, current_token
+
+def parse_break_statement(tokens, index, current_token):
+    line_num = current_token[1]
+    index, current_token = advance(tokens, index)  # consume 'break'
+
+    if not lookahead(current_token, "';'"):
+        return syntax_error(tokens, index, "Expected ';' after 'break'"), index, current_token
+    index, current_token = advance(tokens, index)
+
+    return {
+        "BreakStmt": {
+            "line_num": line_num
+        }
+    }, index, current_token
+
+def parse_for_step_statement(tokens, index, current_token):
+    # This handles expressions like: a = a + 1 (no semicolon)
+    if lookahead(current_token, "T_Identifier"):
+        next_token = tokens[index + 1] if index + 1 < len(tokens) else None
+        if next_token and next_token[4] == "'='":
+            return parse_assignment(tokens, index, current_token, require_semicolon=False)
+
+    # fallback to expression
+    return parse_expression(tokens, index, current_token)
+
+def parse_for_statement(tokens, index, current_token):
+    line_num = current_token[1]
+    index, current_token = advance(tokens, index)  # consume 'for'
+
+    if not lookahead(current_token, "'('"):
+        return syntax_error(tokens, index, "Expected '(' after 'for'"), index, current_token
+    index, current_token = advance(tokens, index)
+
+    # (init)
+    if lookahead(current_token, "';'"):
+        init = {"Empty": True}
+        index, current_token = advance(tokens, index)  # consume ';'
+    else:
+        init, index, current_token = parse_statement(tokens, index, current_token)
+
+    # (test)
+    if lookahead(current_token, "';'"):
+        test = {"Empty": True}
+        index, current_token = advance(tokens, index)  # consume ';'
+    else:
+        test, index, current_token = parse_expression(tokens, index, current_token)
+        if not lookahead(current_token, "';'"):
+            return syntax_error(tokens, index, "Expected ';' after for test expression"), index, current_token
+        index, current_token = advance(tokens, index)  # consume ';'
+
+    # (step)
+    if lookahead(current_token, "')'"):
+        step = {"Empty": True}
+    else:
+        step, index, current_token = parse_for_step_statement(tokens, index, current_token)
+
+
+    if not lookahead(current_token, "')'"):
+        return syntax_error(tokens, index, "Expected ')' after for step expression"), index, current_token
+    index, current_token = advance(tokens, index)  # consume ')'
+
+    # (body)
+    body_node, index, current_token = parse_statement(tokens, index, current_token)
+
+    node = {
+        "ForStmt": {
+            "line_num": line_num,
+            "init": init,
+            "test": test,
+            "step": step,
+            "body": body_node
+        }
+    }
+
+    return node, index, current_token
+
 def parse_expression(tokens, index, current_token):
     return parse_logical_expr(tokens, index, current_token)
+
+def parse_expression_statement(tokens, index, current_token):
+
+    expr_node, index, current_token = parse_expression(tokens, index, current_token)
+
+    if not lookahead(current_token, "';'"):
+        return syntax_error(tokens, index, "Expected ';' after expression statement"), index, current_token
+
+    index, current_token = advance(tokens, index)  # ✅ consume ';'
+
+
+    return expr_node, index, current_token
 
 def parse_logical_expr(tokens, index, current_token):
     left, index, current_token = parse_equality_expr(tokens, index, current_token)

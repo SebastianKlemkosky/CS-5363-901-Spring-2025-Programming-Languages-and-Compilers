@@ -67,6 +67,14 @@ def format_node(node, indent=0):
         return format_print_statement(node, indent)
     elif 'ReturnStmt' in node:
         return format_return_statement(node, indent)
+    elif 'WhileStmt' in node:
+        return format_while_statement(node, indent)
+    elif 'IfStmt' in node:
+        return format_if_statement(node, indent)
+    elif 'ForStmt' in node:
+        return format_for_statement(node, indent)
+    elif 'BreakStmt' in node:
+        return format_break_statement(node, indent)
     elif 'Call' in node:
         return format_call(node, indent)
     elif 'AssignExpr' in node:
@@ -141,12 +149,17 @@ def format_assignment_expression(node, indent=0):
 
 def format_return_statement(node, indent=0):
     lines = []
-    spacing = ' ' * indent
     stmt = node['ReturnStmt']
     line_num = stmt.get('line_num', '')
-    lines.append(f"{line_prefix(line_num)} ReturnStmt:")
-    lines.extend(format_node(stmt['expr'], indent + 6))
+    lines.append(f"{line_prefix(line_num)}   ReturnStmt:")
+
+    if stmt['expr'] == {"Empty": True}:
+        lines.append(f"{line_prefix(line_num)}      Empty:")
+    else:
+        lines.extend(format_node(stmt['expr'], indent + 6))
+
     return lines
+
 
 def format_arithmetic_expression(node, indent=0):
     lines = []
@@ -223,6 +236,64 @@ def format_relational_expression(node, indent=0):
     lines.extend(format_node(expr['left'], indent + 6))
     lines.append(f"{line_prefix(line_num)}      Operator: {expr['operator']}")
     lines.extend(format_node(expr['right'], indent + 6))
+    return lines
+
+def format_while_statement(node, indent=0):
+    lines = []
+    stmt = node['WhileStmt']
+    line_num = stmt.get('line_num', '')
+    lines.append(f"{line_prefix('')}WhileStmt:")
+    lines.append(f"{line_prefix(line_num)}   (test)")
+    lines.extend(format_node(stmt['test'], indent + 6))
+    lines.append(f"{line_prefix('')}   (body) StmtBlock:")
+    lines.extend(format_node(stmt['body'], indent + 6))
+    return lines
+
+def format_if_statement(node, indent=0):
+    lines = []
+    stmt = node['IfStmt']
+    line_num = stmt.get('line_num', '')
+    lines.append(f"{line_prefix('')}IfStmt:")
+    lines.append(f"{line_prefix(line_num)}   (test)")
+    lines.extend(format_node(stmt['test'], indent + 6))
+    lines.append(f"{line_prefix('')}   (then)")
+    lines.extend(format_node(stmt['then'], indent + 6))
+    if 'else' in stmt:
+        lines.append(f"{line_prefix('')}   (else)")
+        lines.extend(format_node(stmt['else'], indent + 6))
+    return lines
+
+def format_break_statement(node, indent=0):
+    stmt = node['BreakStmt']
+    line_num = stmt.get('line_num', '')
+    return [f"{line_prefix(line_num)}   BreakStmt:"]
+
+def format_for_statement(node, indent=0):
+    lines = []
+    stmt = node['ForStmt']
+    line_num = stmt.get('line_num', '')
+    lines.append(f"{line_prefix('')}ForStmt:")
+
+    if stmt['init'] == {"Empty": True}:
+        lines.append(f"{line_prefix(line_num)}   (init) Empty:")
+    else:
+        lines.append(f"{line_prefix(line_num)}   (init)")
+        lines.extend(format_node(stmt['init'], indent + 6))
+
+    if stmt['test'] == {"Empty": True}:
+        lines.append(f"{line_prefix(line_num)}   (test) Empty:")
+    else:
+        lines.append(f"{line_prefix(line_num)}   (test)")
+        lines.extend(format_node(stmt['test'], indent + 6))
+
+    if stmt['step'] == {"Empty": True}:
+        lines.append(f"{line_prefix(line_num)}   (step) Empty:")
+    else:
+        lines.append(f"{line_prefix(line_num)}   (step)")
+        lines.extend(format_node(stmt['step'], indent + 6))
+
+    lines.append(f"{line_prefix('')}   (body) StmtBlock:")
+    lines.extend(format_node(stmt['body'], indent + 6))
     return lines
 
 def format_ast_string(ast_dict):

@@ -9,7 +9,6 @@ def advance(tokens, index):
 def lookahead(current_token, expected_type):
     return current_token is not None and current_token[4] == expected_type
     
-"""Prints a syntax error message and exits."""
 """Prints a syntax error message and returns a dict."""
 def syntax_error(tokens, index, msg="syntax error", line_num=None):
     if index < len(tokens):
@@ -31,7 +30,6 @@ def syntax_error(tokens, index, msg="syntax error", line_num=None):
 
     return {"SyntaxError": error_msg}
 
-
 def get_line_content(tokens, line_num):
     line_tokens = [tok[0] for tok in tokens if tok[1] == line_num]
     return ' '.join(line_tokens)
@@ -39,7 +37,6 @@ def get_line_content(tokens, line_num):
 """Returns the line prefix with correct alignment for output (line number or 3 spaces)"""
 def line_prefix(line_num):
     return f"{line_num:>3}  " if line_num != '' else "   "
-
 
 """Reads the source code from a file."""
 def read_source_file(path):

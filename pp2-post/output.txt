@@ -1,4 +1,4 @@
-*** Error line 6.
-while ( a < 10 ) {
-           ^
+*** Error line 20.
+return ;
+        ^
 *** Expected identifier after type

@@ -17,7 +17,6 @@ def main():
     # Step 3: Parser Phase
     ast = parse(tokens)
 
-
     print(ast)
     # Export the printed AST output to a text file
     with open(r"pp2-post\output.txt", "w") as f:
