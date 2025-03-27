@@ -1,5 +1,5 @@
 from format_nodes import format_ast_string
-from helper_functions import lookahead, advance, syntax_error
+from helper_functions import lookahead, advance, syntax_error, parse_type, make_identifier_node
 
 precedence = {
     '+': 1,
@@ -29,7 +29,6 @@ def parse_program(tokens, index, current_token):
     while current_token:
         decl_node, index, current_token = parse_declaration(tokens, index, current_token)
 
-        # Explicitly check for syntax errors:
         if isinstance(decl_node, dict) and "SyntaxError" in decl_node:
             return decl_node, index, current_token
 
@@ -39,91 +38,70 @@ def parse_program(tokens, index, current_token):
 
 def parse_declaration(tokens, index, current_token):
     line_num = current_token[1]
-    type_token = current_token
-    index, current_token = advance(tokens, index)
+
+    type_node, index, current_token = parse_type(tokens, index, current_token)
 
     if not lookahead(current_token, "T_Identifier"):
+        print(current_token)
         return syntax_error(tokens, index, "Expected identifier after type"), index, current_token
-    id_token = current_token
+
+    id_node = make_identifier_node(current_token)
     index, current_token = advance(tokens, index)
 
-    if lookahead(current_token, "'('"):  # function declaration
+    if lookahead(current_token, "'('"):
+        # This is a function declaration
         index, current_token = advance(tokens, index)  # consume '('
 
-        formals = []
+        # Skip parameters for now
+        while current_token and not lookahead(current_token, "')'"):
+            index, current_token = advance(tokens, index)
+        if lookahead(current_token, "')'"):
+            index, current_token = advance(tokens, index)
+        else:
+            return syntax_error(tokens, index, "Expected ')' after parameters"), index, current_token
 
-        if not lookahead(current_token, "')'"):
-            while True:
-                param_line_num = current_token[1]
-
-                # Parameter type
-                if current_token[4] not in ('T_Int', 'T_Double', 'T_Bool', 'T_String'):
-                    return syntax_error(tokens, index, "Expected type in parameter list"), index, current_token
-                param_type = current_token[0]
-                index, current_token = advance(tokens, index)
-
-                # Parameter identifier
-                if not lookahead(current_token, "T_Identifier"):
-                    return syntax_error(tokens, index, "Expected identifier in parameter list"), index, current_token
-                param_id = current_token[0]
-                index, current_token = advance(tokens, index)
-
-                formals.append({
-                    "VarDecl": {
-                        "line_num": param_line_num,
-                        "type": param_type,
-                        "identifier": param_id
-                    }
-                })
-
-                if lookahead(current_token, "')'"):
-                    break
-                elif lookahead(current_token, "','"):
-                    index, current_token = advance(tokens, index)
-                else:
-                    return syntax_error(tokens, index, "Expected ',' or ')' in parameter list"), index, current_token
-
-        index, current_token = advance(tokens, index)  # consume ')'
+        # ✅ Now parse the body
+        if not lookahead(current_token, "'{'"):
+            return syntax_error(tokens, index, "Expected '{' to begin function body"), index, current_token
 
         body_node, index, current_token = parse_statement_block(tokens, index, current_token)
 
-        node = {
+        return {
             "FnDecl": {
                 "line_num": line_num,
-                "return_type": type_token[0],
-                "identifier": id_token[0],
-                "formals": formals,
+                "return_type": type_node,
+                "identifier": id_node,
+                "formals": [],  # ✅ Add this line
                 "body": body_node
             }
-        }
+        }, index, current_token
 
-        return node, index, current_token
-
-    # Handle variable declaration
-    elif lookahead(current_token, "';'"):
-        index, current_token = advance(tokens, index)
-        node = {
-            "VarDecl": {
-                "line_num": line_num,
-                "type": type_token[0],
-                "identifier": id_token[0]
-            }
-        }
-        return node, index, current_token
 
     else:
-        return syntax_error(tokens, index, "Expected '(' or ';' after identifier"), index, current_token
+        # Not a function — treat as variable declaration
+        return {
+            "VarDecl": {
+                "line_num": line_num,
+                "type": type_node,
+                "identifier": id_node
+            }
+        }, index, current_token
+
 
 def parse_statement_block(tokens, index, current_token):
-
+    line_num = current_token[1]
     index, current_token = advance(tokens, index)  # consume '{'
     statements = []
+
+
     prev_index = -1
 
     while current_token and not lookahead(current_token, "'}'"):
         if index == prev_index:
-            print("*** Internal error: parser did not advance on statement. Breaking loop to avoid infinite loop.")
-            break
+            # Advance to avoid infinite loop
+            index, current_token = advance(tokens, index)
+            continue
+
         prev_index = index
 
         stmt_node, index, current_token = parse_statement(tokens, index, current_token)
@@ -138,21 +116,19 @@ def parse_statement_block(tokens, index, current_token):
 
     return {"StmtBlock": statements}, index, current_token
 
+
 def parse_statement(tokens, index, current_token):
-    print(f"[DEBUG] parse_statement received Token at line {current_token}")
 
     if lookahead(current_token, "T_Print"):
         return parse_print_statement(tokens, index, current_token)
 
     if lookahead(current_token, "T_Return"):
-        print(f"[DEBUG] parse_statement received T_Return at line {current_token[1]}")
         return parse_return_statement(tokens, index, current_token)
 
-
     elif lookahead(current_token, "T_Int") or \
-        lookahead(current_token, "T_Double") or \
-        lookahead(current_token, "T_Bool") or \
-        lookahead(current_token, "T_String"):
+         lookahead(current_token, "T_Double") or \
+         lookahead(current_token, "T_Bool") or \
+         lookahead(current_token, "T_String"):
         return parse_variable_declaration(tokens, index, current_token)
 
     elif lookahead(current_token, "T_While"):
@@ -267,7 +243,6 @@ def parse_return_statement(tokens, index, current_token):
     line_num = current_token[1]
     index, current_token = advance(tokens, index)  # consume 'return'
 
-    # ✅ Case: return with no expression
     if lookahead(current_token, "';'"):
         index, current_token = advance(tokens, index)
         return {
@@ -497,7 +472,10 @@ def parse_for_statement(tokens, index, current_token):
     index, current_token = advance(tokens, index)  # consume ')'
 
     # (body)
-    body_node, index, current_token = parse_statement(tokens, index, current_token)
+    if not lookahead(current_token, "'{'"):
+        return syntax_error(tokens, index, "Expected '{' to begin for-statement block"), index, current_token
+
+    body_node, index, current_token = parse_statement_block(tokens, index, current_token)
 
     node = {
         "ForStmt": {

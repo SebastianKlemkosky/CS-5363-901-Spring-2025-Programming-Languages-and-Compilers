@@ -46,3 +46,19 @@ def read_source_file(path):
     except FileNotFoundError:
         print(f"Error: File '{path}' not found.")
         exit(1)
+
+def parse_type(tokens, index, current_token):
+    if current_token[4] in ("T_Int", "T_Double", "T_Bool", "T_String", "T_Void"):
+        node = {"Type": current_token[0]}  # current_token[0] is the literal value like "int"
+        index, current_token = advance(tokens, index)
+        return node, index, current_token
+    else:
+        return syntax_error(tokens, index, "Expected type"), index, current_token
+
+def make_identifier_node(token):
+    return {
+        "Identifier": {
+            "line_num": token[1],
+            "name": token[0]
+        }
+    }
