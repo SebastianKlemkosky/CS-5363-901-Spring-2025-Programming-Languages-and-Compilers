@@ -1,96 +1,18 @@
-   Program:
-  1   FnDecl:
-   (return type) Type: void
-  1     Identifier: {'Identifier': {'line_num': 1, 'name': 'main'}}
-   (body) StmtBlock:
-  2   VarDecl: 
+Program:
+1 FnDecl:
+(return type) Type: void
+1   Identifier: {'Identifier': {'line_num': 1, 'name': 'main'}}
+(body) StmtBlock:
+2 VarDecl: 
                      Type: int
-  2      Identifier: a
-  3   VarDecl: 
-                     Type: bool
-  3      Identifier: done
-  5   AssignExpr:
-  5        FieldAccess:
-  5           Identifier: a
-  5     Operator: =
-  5     IntConstant: 0
-   WhileStmt:
-  6     (test)
-  6     RelationalExpr:
-  6        FieldAccess:
-  6           Identifier: a
-  6        Operator: <
-  6     IntConstant: 10
-      (body) StmtBlock:
-   PrintStmt:
-  7     (args)
-  7        FieldAccess:
-  7           Identifier: a
-  7     (args) StringConstant: " "
-  8   AssignExpr:
-  8        FieldAccess:
-  8           Identifier: a
-  8     Operator: =
-  8   ArithmeticExpr:
-  8        FieldAccess:
-  8           Identifier: a
-  8        Operator: +
-  8     IntConstant: 1
-   IfStmt:
-  9     (test)
-  9     EqualityExpr:
-  9        FieldAccess:
-  9           Identifier: a
-  9        Operator: ==
-  9     IntConstant: 5
-      (then)
-  9     BreakStmt:
- 12   AssignExpr:
- 12        FieldAccess:
- 12           Identifier: a
- 12     Operator: =
- 12     IntConstant: 1
- 14   AssignExpr:
- 14        FieldAccess:
- 14           Identifier: done
- 14     Operator: =
-   ForStmt:
- 16     (init) Empty:
- 16     (test)
- 16     LogicalExpr:
- 16     RelationalExpr:
- 16        FieldAccess:
- 16           Identifier: a
- 16        Operator: <=
- 16     IntConstant: 10
- 16        Operator: ||
- 16        FieldAccess:
- 16           Identifier: done
- 16     (step)
- 16   AssignExpr:
- 16        FieldAccess:
- 16           Identifier: a
- 16     Operator: =
- 16   ArithmeticExpr:
- 16        FieldAccess:
- 16           Identifier: a
- 16        Operator: +
- 16     IntConstant: 1
-      (body) StmtBlock:
-   PrintStmt:
- 17     (args)
- 17        FieldAccess:
- 17           Identifier: a
- 17     (args) StringConstant: " "
-   IfStmt:
- 18     (test)
- 18     EqualityExpr:
- 18        FieldAccess:
- 18           Identifier: a
- 18        Operator: ==
- 18     IntConstant: 10
-      (then)
- 18        FieldAccess:
- 18           Identifier: a
- 20     ReturnStmt:
- 20        Empty:
+2    Identifier: a
+4 AssignExpr:
+4      FieldAccess:
+4         Identifier: a
+4   Operator: =
+4   IntConstant: 5
+6 AssignExpr:
+6      FieldAccess:
+6         Identifier: a
+6   Operator: =
+6   ReadIntegerExpr:

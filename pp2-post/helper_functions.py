@@ -30,13 +30,29 @@ def syntax_error(tokens, index, msg="syntax error", line_num=None):
 
     return {"SyntaxError": error_msg}
 
-def get_line_content(tokens, line_num):
-    line_tokens = [tok[0] for tok in tokens if tok[1] == line_num]
-    return ' '.join(line_tokens)
 
 """Returns the line prefix with correct alignment for output (line number or 3 spaces)"""
-def line_prefix(line_num):
-    return f"{line_num:>3}  " if line_num != '' else "   "
+def get_line_content(tokens, line_num):
+    line_tokens = [tok for tok in tokens if tok[1] == line_num]
+    if not line_tokens:
+        return ""
+
+    # Reconstruct the line using spacing from original columns
+    line = ""
+    current_col = 1
+    for tok in line_tokens:
+        token_text, _, start_col, end_col, *_ = tok
+        if start_col > current_col:
+            line += " " * (start_col - current_col)
+        line += token_text
+        current_col = end_col + 1
+
+    return line
+
+def line_prefix(s, indent=0):
+    return " " * indent + str(s)
+
+
 
 """Reads the source code from a file."""
 def read_source_file(path):
@@ -59,7 +75,6 @@ def format_type(type_node):
     if isinstance(type_node, dict) and "Type" in type_node:
         return type_node["Type"]
     return str(type_node)  # Fallback in case of malformed input
-
 
 def make_identifier_node(token):
     return {
