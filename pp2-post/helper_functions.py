@@ -55,6 +55,12 @@ def parse_type(tokens, index, current_token):
     else:
         return syntax_error(tokens, index, "Expected type"), index, current_token
 
+def format_type(type_node):
+    if isinstance(type_node, dict) and "Type" in type_node:
+        return type_node["Type"]
+    return str(type_node)  # Fallback in case of malformed input
+
+
 def make_identifier_node(token):
     return {
         "Identifier": {

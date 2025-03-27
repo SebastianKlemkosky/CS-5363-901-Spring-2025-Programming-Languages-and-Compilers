@@ -1,6 +1,6 @@
    Program:
   1   FnDecl:
-   (return type) Type: {'Type': 'void'}
+   (return type) Type: void
   1     Identifier: {'Identifier': {'line_num': 1, 'name': 'main'}}
    (body) StmtBlock:
   2   VarDecl: 

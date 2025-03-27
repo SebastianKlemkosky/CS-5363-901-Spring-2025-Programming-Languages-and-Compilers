@@ -39,28 +39,30 @@ def parse_program(tokens, index, current_token):
 def parse_declaration(tokens, index, current_token):
     line_num = current_token[1]
 
+    # Parse the type (int, bool, string, void, etc.)
     type_node, index, current_token = parse_type(tokens, index, current_token)
 
+    # Expect an identifier next
     if not lookahead(current_token, "T_Identifier"):
-        print(current_token)
         return syntax_error(tokens, index, "Expected identifier after type"), index, current_token
 
     id_node = make_identifier_node(current_token)
     index, current_token = advance(tokens, index)
 
+    # Lookahead to distinguish between function and variable declaration
     if lookahead(current_token, "'('"):
-        # This is a function declaration
         index, current_token = advance(tokens, index)  # consume '('
 
-        # Skip parameters for now
+        # Skip function parameters for now (empty formals list)
         while current_token and not lookahead(current_token, "')'"):
             index, current_token = advance(tokens, index)
+
         if lookahead(current_token, "')'"):
-            index, current_token = advance(tokens, index)
+            index, current_token = advance(tokens, index)  # consume ')'
         else:
             return syntax_error(tokens, index, "Expected ')' after parameters"), index, current_token
 
-        # ✅ Now parse the body
+        # Expect function body to follow
         if not lookahead(current_token, "'{'"):
             return syntax_error(tokens, index, "Expected '{' to begin function body"), index, current_token
 
@@ -69,16 +71,16 @@ def parse_declaration(tokens, index, current_token):
         return {
             "FnDecl": {
                 "line_num": line_num,
-                "return_type": type_node,
+                "type": type_node,
                 "identifier": id_node,
-                "formals": [],  # ✅ Add this line
+                "formals": [],  # Provide empty list to avoid KeyError
                 "body": body_node
             }
         }, index, current_token
 
-
-    else:
-        # Not a function — treat as variable declaration
+    elif lookahead(current_token, "';'"):
+        # This is a variable declaration
+        index, current_token = advance(tokens, index)  # consume ';'
         return {
             "VarDecl": {
                 "line_num": line_num,
@@ -86,6 +88,9 @@ def parse_declaration(tokens, index, current_token):
                 "identifier": id_node
             }
         }, index, current_token
+
+    else:
+        return syntax_error(tokens, index, "Expected '(' for function or ';' for variable declaration"), index, current_token
 
 
 def parse_statement_block(tokens, index, current_token):
@@ -115,7 +120,6 @@ def parse_statement_block(tokens, index, current_token):
         return syntax_error(tokens, index, "Expected '}' at end of block"), index, current_token
 
     return {"StmtBlock": statements}, index, current_token
-
 
 def parse_statement(tokens, index, current_token):
 

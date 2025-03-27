@@ -1,4 +1,4 @@
-from helper_functions import line_prefix
+from helper_functions import line_prefix, format_type
 
 # Format Print Functions
 def format_program(node, indent=0):
@@ -14,7 +14,7 @@ def format_function_declaration(node, indent=0):
     fn = node['FnDecl']
     line_num = fn.get('line_num', '')
     lines.append(f"{line_prefix(line_num)} FnDecl:")
-    lines.append(f"{line_prefix('')}(return type) Type: {fn['return_type']}")
+    lines.append(f"{line_prefix('')}(return type) Type: {format_type(fn['type'])}")
     lines.append(f"{line_prefix(line_num)}   Identifier: {fn['identifier']}")
 
     if fn["formals"]:
