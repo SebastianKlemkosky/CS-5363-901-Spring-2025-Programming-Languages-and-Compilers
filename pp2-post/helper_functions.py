@@ -11,14 +11,16 @@ def lookahead(current_token, expected_type):
     
 """Prints a syntax error message and returns a dict."""
 def syntax_error(tokens, index, msg="syntax error", line_num=None):
+    
     if index < len(tokens):
         token = tokens[index]
-        # Prefer passed-in line_num, fall back to token
         line_num = line_num if line_num is not None else token[1]
         start_col = token[2]
+
         error_line = get_line_content(tokens, line_num)
         pointer_line = ' ' * (start_col - 1) + '^'
 
+        # Make sure error line starts with same spacing as in source
         error_msg = (
             f"*** Error line {line_num}.\n"
             f"{error_line}\n"
@@ -27,7 +29,7 @@ def syntax_error(tokens, index, msg="syntax error", line_num=None):
         )
     else:
         error_msg = f"*** Error at EOF\n*** {msg}"
-
+    #print(error_msg)
     return {"SyntaxError": error_msg}
 
 
@@ -51,8 +53,6 @@ def get_line_content(tokens, line_num):
 
 def line_prefix(s, indent=0):
     return " " * indent + str(s)
-
-
 
 """Reads the source code from a file."""
 def read_source_file(path):

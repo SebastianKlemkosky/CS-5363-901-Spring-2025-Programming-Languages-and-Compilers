@@ -5,7 +5,9 @@ precedence = {
     '+': 1,
     '-': 1,
     '*': 2,
-    '/': 2
+    '/': 2,
+    '%': 2
+
 }
 
 # Parse Functions
@@ -44,7 +46,7 @@ def parse_declaration(tokens, index, current_token):
 
     # Expect an identifier next
     if not lookahead(current_token, "T_Identifier"):
-        return syntax_error(tokens, index, "Expected identifier after type"), index, current_token
+        return syntax_error(tokens, index, "syntax error"), index, current_token
 
     id_node = make_identifier_node(current_token)
     index, current_token = advance(tokens, index)
@@ -61,13 +63,16 @@ def parse_declaration(tokens, index, current_token):
         if lookahead(current_token, "')'"):
             index, current_token = advance(tokens, index)  # consume ')'
         else:
-            return syntax_error(tokens, index, "Expected ')' after parameters"), index, current_token
+            return syntax_error(tokens, index, "syntax error"), index, current_token
 
         # Expect function body to follow
         if not lookahead(current_token, "'{'"):
             return syntax_error(tokens, index, "syntax error"), index, current_token
 
         body_node, index, current_token = parse_statement_block(tokens, index, current_token)
+
+        if isinstance(body_node, dict) and "SyntaxError" in body_node:
+            return body_node, index, current_token  # 🔴 Stop early on block parse error
 
         return {
             "FnDecl": {
@@ -128,27 +133,26 @@ def parse_formals(tokens, index, current_token):
 
     return formals, index, current_token
 
-
 def parse_statement_block(tokens, index, current_token):
     line_num = current_token[1]
     index, current_token = advance(tokens, index)  # consume '{'
     statements = []
-
-
     prev_index = -1
 
     while current_token and not lookahead(current_token, "'}'"):
         if index == prev_index:
-            # Advance to avoid infinite loop
+            # Prevent infinite loop
             index, current_token = advance(tokens, index)
             continue
 
         prev_index = index
-
         stmt_node, index, current_token = parse_statement(tokens, index, current_token)
 
-        if stmt_node is not None:
-            statements.append(stmt_node)
+        if isinstance(stmt_node, dict) and "SyntaxError" in stmt_node:
+            # Stop parsing the block entirely on first syntax error
+            return stmt_node, index, current_token
+
+        statements.append(stmt_node)
 
     if lookahead(current_token, "'}'"):
         index, current_token = advance(tokens, index)
@@ -158,6 +162,11 @@ def parse_statement_block(tokens, index, current_token):
     return {"StmtBlock": statements}, index, current_token
 
 def parse_statement(tokens, index, current_token):
+    # Skip empty or whitespace-only tokens
+    if not current_token or not current_token[0].strip():
+        index, current_token = advance(tokens, index)
+        return parse_statement(tokens, index, current_token)
+
 
     if lookahead(current_token, "T_Print"):
         return parse_print_statement(tokens, index, current_token)
@@ -184,10 +193,12 @@ def parse_statement(tokens, index, current_token):
         return parse_break_statement(tokens, index, current_token)
 
     elif lookahead(current_token, "T_Identifier"):
+
         next_token = tokens[index + 1] if index + 1 < len(tokens) else None
 
         if next_token and next_token[4] == "'='":
-            return parse_assignment(tokens, index, current_token)
+            stmt_node, index, current_token = parse_assignment(tokens, index, current_token, require_semicolon=True)
+            return stmt_node, index, current_token
 
         elif next_token and next_token[4] == "'('":
             call_node, index, current_token = parse_call(tokens, index, current_token)
@@ -197,14 +208,16 @@ def parse_statement(tokens, index, current_token):
             return call_node, index, current_token
 
         else:
-            # 🟢 Try parsing it as an expression statement (like: a;)
             try_expr_node, try_index, try_token = parse_expression_statement(tokens, index, current_token)
             if isinstance(try_expr_node, dict) and "SyntaxError" not in try_expr_node:
+                if not lookahead(try_token, "';'"):
+                    return syntax_error(tokens, try_index, "syntax error"), try_index, try_token
+                try_index, try_token = advance(tokens, try_index)
                 return try_expr_node, try_index, try_token
+
 
             # fallback error
             return syntax_error(tokens, index, "syntax error"), index, current_token
-
 
     else:
 
@@ -308,42 +321,44 @@ def parse_return_statement(tokens, index, current_token):
 
 def parse_print_statement(tokens, index, current_token):
     line_num = current_token[1]
+    
     index, current_token = advance(tokens, index)  # consume 'Print'
 
     if not lookahead(current_token, "'('"):
         return syntax_error(tokens, index, "syntax error"), index, current_token
-    index, current_token = advance(tokens, index)  # consume '('
+    index, current_token = advance(tokens, index)
 
     args = []
-
     if not lookahead(current_token, "')'"):
         while True:
-            expr_node, index, current_token = parse_expression(tokens, index, current_token)
-            if isinstance(expr_node, dict) and "SyntaxError" in expr_node:
-                return expr_node, index, current_token
-            args.append(expr_node)
+            expr, index, current_token = parse_expression(tokens, index, current_token)
+            if isinstance(expr, dict) and "SyntaxError" in expr:
+                return expr, index, current_token
+
+            args.append(expr)
 
             if lookahead(current_token, "')'"):
                 break
-            elif lookahead(current_token, "','"):
-                index, current_token = advance(tokens, index)
-            else:
+            if not lookahead(current_token, "','"):
                 return syntax_error(tokens, index, "syntax error"), index, current_token
+            index, current_token = advance(tokens, index)  # consume ','
+
+
+    if not lookahead(current_token, "')'"):
+        return syntax_error(tokens, index, "syntax error"), index, current_token
 
     index, current_token = advance(tokens, index)  # consume ')'
-
     if not lookahead(current_token, "';'"):
         return syntax_error(tokens, index, "syntax error"), index, current_token
+
     index, current_token = advance(tokens, index)  # consume ';'
 
-    node = {
+    return {
         "PrintStmt": {
             "line_num": line_num,
             "args": args
         }
-    }
-
-    return node, index, current_token
+    }, index, current_token
 
 def parse_call(tokens, index, current_token):
     line_num = current_token[1]
@@ -398,6 +413,10 @@ def parse_while_statement(tokens, index, current_token):
     index, current_token = advance(tokens, index)  # consume ')'
 
     body_node, index, current_token = parse_statement_block(tokens, index, current_token)
+
+    # 🔴 Check if the block returned a syntax error
+    if isinstance(body_node, dict) and "SyntaxError" in body_node:
+        return body_node, index, current_token
 
     node = {
         "WhileStmt": {
