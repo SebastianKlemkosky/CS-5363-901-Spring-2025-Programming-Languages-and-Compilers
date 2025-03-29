@@ -1,9 +1,8 @@
 void main() {
-  int a;
-
-  a = 0;
- 
-  if (a % 2 == 0) break;
-
+  int x;
   
+  while (x) {
+    else
+      z = 24;
+  }
 }

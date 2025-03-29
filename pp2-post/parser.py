@@ -167,6 +167,8 @@ def parse_statement(tokens, index, current_token):
         index, current_token = advance(tokens, index)
         return parse_statement(tokens, index, current_token)
 
+    if lookahead(current_token, "T_Else"):
+        return syntax_error(tokens, index, "syntax error", token_override=current_token, underline=True), index, current_token
 
     if lookahead(current_token, "T_Print"):
         return parse_print_statement(tokens, index, current_token)
@@ -193,7 +195,6 @@ def parse_statement(tokens, index, current_token):
         return parse_break_statement(tokens, index, current_token)
 
     elif lookahead(current_token, "T_Identifier"):
-
         next_token = tokens[index + 1] if index + 1 < len(tokens) else None
 
         if next_token and next_token[4] == "'='":
@@ -215,12 +216,10 @@ def parse_statement(tokens, index, current_token):
                 try_index, try_token = advance(tokens, try_index)
                 return try_expr_node, try_index, try_token
 
-
             # fallback error
             return syntax_error(tokens, index, "syntax error"), index, current_token
 
     else:
-
         try_expr_node, try_index, try_token = parse_expression_statement(tokens, index, current_token)
         if isinstance(try_expr_node, dict) and "SyntaxError" not in try_expr_node:
             return try_expr_node, try_index, try_token
@@ -229,7 +228,7 @@ def parse_statement(tokens, index, current_token):
         line_num = current_token[1] if current_token else -1
         index, current_token = advance(tokens, index)
         return syntax_error(tokens, index, "syntax error", line_num), index, current_token
-  
+
 def parse_assignment(tokens, index, current_token, require_semicolon=True):
     line_num = current_token[1]
     target_token = current_token
@@ -450,12 +449,13 @@ def parse_if_statement(tokens, index, current_token):
     # Check for optional else
     else_stmt = None
     if lookahead(current_token, "T_Else"):
+        else_token = current_token  # Save the 'else' token before consuming
         index, current_token = advance(tokens, index)
         else_start_index = index
         else_stmt, index, current_token = parse_statement(tokens, index, current_token)
+        print("TEST")
         if index == else_start_index:
-            return syntax_error(tokens, index, "syntax error"), index, current_token
-
+            return syntax_error(tokens, index, "syntax error", line_num=else_token[1], token_override=else_token), index, current_token
 
     node = {
         "IfStmt": {
