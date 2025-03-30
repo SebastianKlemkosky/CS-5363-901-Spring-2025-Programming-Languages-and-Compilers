@@ -1,9 +1,9 @@
-from helper_functions import line_prefix, format_type
+from helper_functions import line_prefix, format_type, aligned_prefix
 
 # Format Print Functions
 def format_program(node, indent=0):
     lines = []
-    lines.append(f"{line_prefix('')}Program:")
+    lines.append(f"{aligned_prefix('', 1)}Program:")
     for child in node['Program']:
         lines.extend(format_node(child, indent + 2))
     return lines
@@ -13,21 +13,27 @@ def format_function_declaration(node, indent=0):
     spacing = ' ' * indent
     fn = node['FnDecl']
     line_num = fn.get('line_num', '')
-    lines.append(f"{line_prefix(line_num)} FnDecl:")
-    lines.append(f"{line_prefix('')}(return type) Type: {format_type(fn['type'])}")
-    lines.append(f"{line_prefix(line_num)}   Identifier: {fn['identifier']}")
+    
+    lines.append(f"{line_prefix(line_num, indent)}FnDecl:")
+    lines.append(f"{line_prefix('', indent + 2)}(return type) Type: {format_type(fn['type'])}")
 
+    # Unwrap identifier
+    ident_line = fn["identifier"]["Identifier"]["line_num"]
+    ident_name = fn["identifier"]["Identifier"]["name"]
+    lines.append(f"{line_prefix(ident_line, indent + 2)}Identifier: {ident_name}")
+
+    # Format formals if present
     if fn["formals"]:
         for formal in fn["formals"]:
             f_line_num = formal["VarDecl"]["line_num"]
             f_type = formal["VarDecl"]["type"]
             f_id = formal["VarDecl"]["identifier"]
-            lines.append(f"{line_prefix(line_num)}   (formals) VarDecl:")
-            lines.append(f"{spacing}         Type: {f_type}")
-            lines.append(f"{spacing}{f_line_num:<3}      Identifier: {f_id}")
+            lines.append(f"{line_prefix(line_num, indent + 2)}(formals) VarDecl:")
+            lines.append(f"{' ' * (indent + 9)}Type: {f_type}")
+            lines.append(f"{line_prefix(f_line_num, indent + 9)}Identifier: {f_id}")
 
-    lines.append(f"{line_prefix('')}(body) StmtBlock:")
-    lines.extend(format_node(fn['body'], indent + 8))
+    lines.append(f"{line_prefix('', indent + 2)}(body) StmtBlock:")
+    lines.extend(format_node(fn['body'], indent + 6))
     return lines
 
 def format_statement_block(node, indent=0):
@@ -40,17 +46,16 @@ def format_print_statement(node, indent=0):
     lines = []
     stmt = node['PrintStmt']
     line_num = stmt.get('line_num', '')
-    lines.append(f"{line_prefix('')}PrintStmt:")
+
+    lines.append(f"{line_prefix(line_num, indent)}PrintStmt:")
 
     for arg in stmt['args']:
         if 'StringConstant' in arg:
             string_val = arg['StringConstant']['value']
-            lines.append(f"{line_prefix(line_num)}   (args) StringConstant: {string_val}")
+            lines.append(f"{line_prefix(line_num, indent + 2)}(args) StringConstant: {string_val}")
         else:
-            lines.append(f"{line_prefix(line_num)}   (args)")
-            lines.extend(format_node(arg, indent + 6))
-
-
+            lines.append(f"{line_prefix(line_num, indent + 2)}(args)")
+            lines.extend(format_node(arg, indent + 4))
 
     return lines
 
@@ -104,13 +109,17 @@ def format_call(node, indent=0):
     lines = []
     call = node['Call']
     line_num = call.get('line_num', '')
-    lines.append(f"{line_prefix(line_num)}   (args) Call:")
-    lines.append(f"{line_prefix(line_num)}      Identifier: {call['identifier']}")
-    lines.append(f"{line_prefix('')}(actuals):")
 
-    actuals = call['actuals']
-    for actual in actuals:
-        lines.extend(format_node(actual, indent + 6))
+    # (args) Call:
+    lines.append(f"{line_prefix(line_num, indent)}(args) Call:")
+    # Identifier line
+    lines.append(f"{line_prefix(line_num, indent + 2)}Identifier: {call['identifier']}")
+    
+    # (actuals) line
+    if call["actuals"]:
+        lines.append(f"{line_prefix(line_num, indent + 2)}(actuals)")
+        for actual in call['actuals']:
+            lines.extend(format_node(actual, indent + 4))
 
     return lines
 
@@ -159,7 +168,6 @@ def format_return_statement(node, indent=0):
         lines.extend(format_node(stmt['expr'], indent + 6))
 
     return lines
-
 
 def format_arithmetic_expression(node, indent=0):
     lines = []
@@ -295,6 +303,11 @@ def format_for_statement(node, indent=0):
     lines.append(f"{line_prefix('')}   (body) StmtBlock:")
     lines.extend(format_node(stmt['body'], indent + 6))
     return lines
+
+def format_identifier(node, indent=0):
+    id_info = node["Identifier"]
+    line = f"{line_prefix(id_info['line_num'], indent)}Identifier: {id_info['name']}"
+    return [line]
 
 def format_ast_string(ast_dict):
     lines = format_node(ast_dict)

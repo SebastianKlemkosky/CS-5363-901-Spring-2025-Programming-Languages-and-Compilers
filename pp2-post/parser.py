@@ -401,21 +401,34 @@ def parse_while_statement(tokens, index, current_token):
     line_num = current_token[1]
     index, current_token = advance(tokens, index)  # consume 'while'
 
+    # Expect '('
     if not lookahead(current_token, "'('"):
-        return syntax_error(tokens, index, "syntax error"), index, current_token
+        return syntax_error(tokens, index, "syntax error: expected '(' after 'while'"), index, current_token
     index, current_token = advance(tokens, index)  # consume '('
 
+    # Parse the condition expression
     test_expr, index, current_token = parse_expression(tokens, index, current_token)
+    if isinstance(test_expr, dict) and "SyntaxError" in test_expr:
+        return test_expr, index, current_token
 
+    # Expect ')'
     if not lookahead(current_token, "')'"):
-        return syntax_error(tokens, index, "syntax error"), index, current_token
+        return syntax_error(tokens, index, "syntax error: expected ')'"), index, current_token
     index, current_token = advance(tokens, index)  # consume ')'
 
-    body_node, index, current_token = parse_statement_block(tokens, index, current_token)
-
-    # 🔴 Check if the block returned a syntax error
-    if isinstance(body_node, dict) and "SyntaxError" in body_node:
-        return body_node, index, current_token
+    # Now check if the next token is '{' (block) or not (single statement)
+    if lookahead(current_token, "'{'"):
+        body_node, index, current_token = parse_statement_block(tokens, index, current_token)
+        if isinstance(body_node, dict) and "SyntaxError" in body_node:
+            return body_node, index, current_token
+    else:
+        single_stmt, index, current_token = parse_statement(tokens, index, current_token)
+        if isinstance(single_stmt, dict) and "SyntaxError" in single_stmt:
+            return single_stmt, index, current_token
+        # Wrap the single statement in a small block node
+        body_node = {
+            "StmtBlock": [single_stmt]
+        }
 
     node = {
         "WhileStmt": {
@@ -424,7 +437,6 @@ def parse_while_statement(tokens, index, current_token):
             "body": body_node
         }
     }
-
     return node, index, current_token
 
 def parse_if_statement(tokens, index, current_token):
@@ -453,7 +465,6 @@ def parse_if_statement(tokens, index, current_token):
         index, current_token = advance(tokens, index)
         else_start_index = index
         else_stmt, index, current_token = parse_statement(tokens, index, current_token)
-        print("TEST")
         if index == else_start_index:
             return syntax_error(tokens, index, "syntax error", line_num=else_token[1], token_override=else_token), index, current_token
 
@@ -498,43 +509,57 @@ def parse_for_statement(tokens, index, current_token):
     line_num = current_token[1]
     index, current_token = advance(tokens, index)  # consume 'for'
 
+    # Expect '('
     if not lookahead(current_token, "'('"):
-        return syntax_error(tokens, index, "syntax error"), index, current_token
-    index, current_token = advance(tokens, index)
+        return syntax_error(tokens, index, "syntax error: expected '(' after 'for'"), index, current_token
+    index, current_token = advance(tokens, index)  # consume '('
 
-    # (init)
+    # Parse (init)
     if lookahead(current_token, "';'"):
         init = {"Empty": True}
         index, current_token = advance(tokens, index)  # consume ';'
     else:
         init, index, current_token = parse_statement(tokens, index, current_token)
+        if isinstance(init, dict) and "SyntaxError" in init:
+            return init, index, current_token
 
-    # (test)
+    # Parse (test)
     if lookahead(current_token, "';'"):
         test = {"Empty": True}
         index, current_token = advance(tokens, index)  # consume ';'
     else:
         test, index, current_token = parse_expression(tokens, index, current_token)
+        if isinstance(test, dict) and "SyntaxError" in test:
+            return test, index, current_token
         if not lookahead(current_token, "';'"):
-            return syntax_error(tokens, index, "syntax error"), index, current_token
+            return syntax_error(tokens, index, "syntax error: expected ';' after test"), index, current_token
         index, current_token = advance(tokens, index)  # consume ';'
 
-    # (step)
+    # Parse (step)
     if lookahead(current_token, "')'"):
         step = {"Empty": True}
     else:
         step, index, current_token = parse_for_step_statement(tokens, index, current_token)
+        if isinstance(step, dict) and "SyntaxError" in step:
+            return step, index, current_token
 
-
+    # Expect ')'
     if not lookahead(current_token, "')'"):
-        return syntax_error(tokens, index, "syntax error"), index, current_token
+        return syntax_error(tokens, index, "syntax error: expected ')' after for clauses"), index, current_token
     index, current_token = advance(tokens, index)  # consume ')'
 
-    # (body)
-    if not lookahead(current_token, "'{'"):
-        return syntax_error(tokens, index, "syntax error"), index, current_token
-
-    body_node, index, current_token = parse_statement_block(tokens, index, current_token)
+    # Now check if the next token is '{' (block) or not
+    if lookahead(current_token, "'{'"):
+        body_node, index, current_token = parse_statement_block(tokens, index, current_token)
+        if isinstance(body_node, dict) and "SyntaxError" in body_node:
+            return body_node, index, current_token
+    else:
+        single_stmt, index, current_token = parse_statement(tokens, index, current_token)
+        if isinstance(single_stmt, dict) and "SyntaxError" in single_stmt:
+            return single_stmt, index, current_token
+        body_node = {
+            "StmtBlock": [single_stmt]
+        }
 
     node = {
         "ForStmt": {
@@ -545,7 +570,6 @@ def parse_for_statement(tokens, index, current_token):
             "body": body_node
         }
     }
-
     return node, index, current_token
 
 def parse_expression(tokens, index, current_token):

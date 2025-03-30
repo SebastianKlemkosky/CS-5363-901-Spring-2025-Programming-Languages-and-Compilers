@@ -5,7 +5,7 @@ import sys
 from contextlib import redirect_stdout
 def main():
     # Hardcoded file path for now
-    file_path = r"pp2-post\samples\control.decaf"
+    file_path = r"pp2-post\samples\simple.decaf"
 
     # Step 1: Read file contents
     source_code = read_source_file(file_path)

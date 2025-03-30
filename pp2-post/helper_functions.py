@@ -34,7 +34,6 @@ def syntax_error(tokens, index, msg="syntax error", line_num=None, token_overrid
 
     return {"SyntaxError": error_msg}
 
-
 """Returns the line prefix with correct alignment for output (line number or 3 spaces)"""
 def get_line_content(tokens, line_num):
     line_tokens = [tok for tok in tokens if tok[1] == line_num]
@@ -53,8 +52,21 @@ def get_line_content(tokens, line_num):
 
     return line
 
-def line_prefix(s, indent=0):
-    return " " * indent + str(s)
+def line_prefix(line_num, indent=0):
+    """
+    Returns a line prefix with the line number (if present), left-aligned.
+    No leading space before the line number.
+    """
+    if line_num == '':
+        return ' ' * indent
+    return f"{str(line_num):<3}{' ' * indent}"
+
+def aligned_prefix(line_num, indent=0):
+    """Produces a prefix with optional line number and indentation.
+    Ensures that content starts one column after the widest line number width."""
+    line_str = f"{line_num}" if line_num else ""
+    # Align to 4 characters for line numbers, adjust spacing after
+    return f"{line_str:<4}{' ' * indent}"
 
 """Reads the source code from a file."""
 def read_source_file(path):

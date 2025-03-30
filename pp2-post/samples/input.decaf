@@ -1,8 +1,23 @@
 void main() {
-  int x;
+    int a;
+    bool done;
+
+    a = 0;
+
   
-  while (x) {
-    else
-      z = 24;
-  }
+    // Single-statement while loop:
+    // (no braces, just one statement after the condition)
+    while (a < 12) a = a + 1;
+
+    // For loop with braces:
+    for (; a <= 10 || done; a = a + 1) {
+        Print(a, " ");
+        if (a == 10) a;
+    }
+
+    // Single-statement for loop:
+    // (again, one statement without braces)
+    for (a = 0; a < 3; a = a + 1) Print(a, " single ");
+
+    return;
 }
