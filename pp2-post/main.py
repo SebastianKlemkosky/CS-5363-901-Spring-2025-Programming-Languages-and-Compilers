@@ -3,6 +3,7 @@ from parser import parse
 from helper_functions import read_source_file
 import sys
 from contextlib import redirect_stdout
+
 def main():
     # Hardcoded file path for now
     file_path = r"pp2-post\samples\simple.decaf"

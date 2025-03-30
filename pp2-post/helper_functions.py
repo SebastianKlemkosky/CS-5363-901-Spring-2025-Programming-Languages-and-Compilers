@@ -97,3 +97,32 @@ def make_identifier_node(token):
             "name": token[0]
         }
     }
+
+def custom_line_prefix(line_num, level):
+    """
+    Attempt to match the spacing from correct_output.txt precisely.
+    The user wants:
+      - 2 leading spaces
+      - If line_num is present, print it in a 1- or 2-char field, then 3 spaces
+        e.g. "  1   "
+      - If line_num is absent, we do 2 leading spaces + 1 space for the 'missing' digit + 2 spaces
+        e.g. "      " => that also lines up
+      - Then add (level * 2) or (level * 3) spaces for indentation per nesting level.
+    """
+    # 2 leading spaces
+    prefix = "  "
+
+    if line_num:
+        # line_num in a 1-2 char field, then 3 spaces
+        # e.g. "  1   "
+        prefix += f"{line_num:<1}   "  # if line_num has more digits, you may do <2
+    else:
+        # No line number => still keep the same columns for alignment => 1 space + 3 spaces
+        prefix += "    "
+
+    # Now add indentation for nesting. In correct_output.txt, child lines
+    # are usually about 3 spaces more than the parent. But if you want
+    # them slightly less, you can do 2 spaces per level.
+    prefix += " " * (level * 2)
+
+    return prefix
