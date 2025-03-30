@@ -1,4 +1,4 @@
-# Helper Functions
+# Parser Helper Functions
 """Advances to the next token, returning the new index and current token."""
 def advance(tokens, index):
     index += 1
@@ -52,22 +52,6 @@ def get_line_content(tokens, line_num):
 
     return line
 
-def line_prefix(line_num, indent=0):
-    """
-    Returns a line prefix with the line number (if present), left-aligned.
-    No leading space before the line number.
-    """
-    if line_num == '':
-        return ' ' * indent
-    return f"{str(line_num):<3}{' ' * indent}"
-
-def aligned_prefix(line_num, indent=0):
-    """Produces a prefix with optional line number and indentation.
-    Ensures that content starts one column after the widest line number width."""
-    line_str = f"{line_num}" if line_num else ""
-    # Align to 4 characters for line numbers, adjust spacing after
-    return f"{line_str:<4}{' ' * indent}"
-
 """Reads the source code from a file."""
 def read_source_file(path):
     try:
@@ -85,11 +69,6 @@ def parse_type(tokens, index, current_token):
     else:
         return syntax_error(tokens, index, "Expected type"), index, current_token
 
-def format_type(type_node):
-    if isinstance(type_node, dict) and "Type" in type_node:
-        return type_node["Type"]
-    return str(type_node)  # Fallback in case of malformed input
-
 def make_identifier_node(token):
     return {
         "Identifier": {
@@ -98,31 +77,23 @@ def make_identifier_node(token):
         }
     }
 
-def custom_line_prefix(line_num, level):
-    """
-    Attempt to match the spacing from correct_output.txt precisely.
-    The user wants:
-      - 2 leading spaces
-      - If line_num is present, print it in a 1- or 2-char field, then 3 spaces
-        e.g. "  1   "
-      - If line_num is absent, we do 2 leading spaces + 1 space for the 'missing' digit + 2 spaces
-        e.g. "      " => that also lines up
-      - Then add (level * 2) or (level * 3) spaces for indentation per nesting level.
-    """
-    # 2 leading spaces
-    prefix = "  "
+# Format Nodes Helper Functions
+def add_line(lines, line_num, level, text, extra_indent=0):
+    prefix = f"{line_num:>3}" if line_num != "" else "   "
+    indent = " " * (level * 3 + extra_indent)
 
-    if line_num:
-        # line_num in a 1-2 char field, then 3 spaces
-        # e.g. "  1   "
-        prefix += f"{line_num:<1}   "  # if line_num has more digits, you may do <2
-    else:
-        # No line number => still keep the same columns for alignment => 1 space + 3 spaces
-        prefix += "    "
+    if text.endswith(":") and not text.endswith(": "):
+        text += " "
 
-    # Now add indentation for nesting. In correct_output.txt, child lines
-    # are usually about 3 spaces more than the parent. But if you want
-    # them slightly less, you can do 2 spaces per level.
-    prefix += " " * (level * 2)
+    lines.append(f"{prefix}{indent}{text}")
 
-    return prefix
+def insert_label_into_first_line(lines, label, base_level):
+    if not lines:
+        return lines
+    # The prefix consists of a 3-character line number (or blanks) plus base_level*3 spaces.
+    prefix_length = 3 + base_level * 3
+    first_line = lines[0]
+    prefix = first_line[:prefix_length]
+    text = first_line[prefix_length:].lstrip()
+    lines[0] = prefix + f"{label} {text}"
+    return lines

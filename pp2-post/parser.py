@@ -23,7 +23,7 @@ def parse(token_stream):
         return '\n' + ast_dict["SyntaxError"] + '\n'
 
     ast = format_ast_string(ast_dict)
-    return '\n' + ast
+    return ast
 
 def parse_program(tokens, index, current_token):
     program_node = {"Program": []}

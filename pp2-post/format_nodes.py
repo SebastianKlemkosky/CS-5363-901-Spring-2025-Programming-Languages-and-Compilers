@@ -1,473 +1,357 @@
-from helper_functions import custom_line_prefix, format_type
+from helper_functions import add_line, insert_label_into_first_line
 
-def format_program(node, level=0):
-
+def format_ast_string(ast_dict):
+    #print(ast_dict)
     lines = []
-    prefix = custom_line_prefix('', level)
-    # Add a space after the colon
-    lines.append(f"{prefix}Program: ")
+    lines.append("")  # blank line before
 
-    # Print each child at level+1
-    for child in node['Program']:
-        lines.extend(format_node(child, level + 1))
+    lines.extend(format_node(ast_dict, level=0))
 
+    return "\n".join(lines) 
+
+def format_node(node, level):
+    if "Program" in node:
+        return format_program(node["Program"], level)
+    if "FnDecl" in node:
+        return format_function_declaration(node["FnDecl"], level)
+    if "VarDecl" in node:
+        return format_var_decl(node["VarDecl"], level)
+    if "StmtBlock" in node:
+        return format_statement_block(node["StmtBlock"], level)
+    if "AssignExpr" in node:
+        return format_assign_expr(node["AssignExpr"], level)
+    if "ReturnStmt" in node:
+        return format_return_statement(node["ReturnStmt"], level)
+    if "ArithmeticExpr" in node:
+        return format_arithmetic_expr(node["ArithmeticExpr"], level)
+    if "FieldAccess" in node:
+        return format_field_access(node["FieldAccess"], level)
+    if "Call" in node:
+        return format_call(node["Call"], level)
+    if "PrintStmt" in node:
+        return format_print_statement(node["PrintStmt"], level)
+    if "StringConstant" in node:
+        return format_string_constant(node["StringConstant"], level)
+    if "IntConstant" in node:
+        return format_int_constant(node["IntConstant"], level)
+    if "DoubleConstant" in node:
+        return format_double_constant(node["DoubleConstant"], level)
+    if "BoolConstant" in node:
+        return format_bool_constant(node["BoolConstant"], level)
+    if "ReadIntegerExpr" in node:
+        return format_read_integer_expr(node["ReadIntegerExpr"], level)
+    if "LogicalExpr" in node:
+        return format_logical_expr(node["LogicalExpr"], level)
+    if "EqualityExpr" in node:
+        return format_equality_expr(node["EqualityExpr"], level)
+    if "RelationalExpr" in node:
+        return format_relational_expr(node["RelationalExpr"], level)
+    if "WhileStmt" in node:
+        return format_while_statement(node["WhileStmt"], level)
+    if "IfStmt" in node:
+        return format_if_statement(node["IfStmt"], level)
+    if "ForStmt" in node:
+        return format_for_statement(node["ForStmt"], level)
+    return []
+
+def format_program(program_list, level):
+    lines = []
+    add_line(lines, "", level, "Program:")
+    for decl in program_list:
+        lines.extend(format_node(decl, level + 1))
     return lines
 
-
-def format_function_declaration(node, level=0):
-
+def format_function_declaration(fn, level):
     lines = []
-    fn = node['FnDecl']
-    line_num = fn.get('line_num', '')
+    line_num = fn.get("line_num", "")
+    add_line(lines, line_num, level, "FnDecl:")
+    add_line(lines, "", level + 1, f"(return type) Type: {fn['type']['Type']}")
 
-    # "FnDecl:"
-    prefix_fn = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix_fn}FnDecl: ")
+    ident = fn['identifier']['Identifier']
+    ident_line = ident.get("line_num", line_num)
+    add_line(lines, ident_line, level + 1, f"Identifier: {ident['name']}")
 
-    # Return type
-    prefix_type = custom_line_prefix('', level + 1)
-    lines.append(f"{prefix_type}(return type) Type: {format_type(fn['type'])}")
+    if fn['formals']:
+        for formal in fn['formals']:
+            formal_data = formal['VarDecl']
+            formal_line = formal_data.get("line_num", line_num)
+            add_line(lines, formal_line, level + 1, "(formals) VarDecl:")
 
-    # Identifier
-    ident_line = fn["identifier"]["Identifier"].get("line_num", '')
-    ident_name = fn["identifier"]["Identifier"]["name"]
-    prefix_ident = custom_line_prefix(line_num, level + 1)
-    lines.append(f"{prefix_ident}Identifier: {ident_name}")
+            var_type = formal_data["type"]
+            if isinstance(var_type, dict) and "Type" in var_type:
+                type_str = var_type["Type"]
+            else:
+                type_str = var_type
+            add_line(lines, "", level + 2, f"Type: {type_str}")
 
-    # Formals
-    if fn.get("formals"):
-        for formal in fn["formals"]:
-            lines.extend(format_formal_declaration(formal, line_num, level + 1))
+            ident = formal_data['identifier']
+            if isinstance(ident, dict) and 'Identifier' in ident:
+                ident_data = ident['Identifier']
+                ident_line = ident_data.get("line_num", formal_line)
+                name = ident_data['name']
+            else:
+                ident_line = formal_line
+                name = ident
+            add_line(lines, ident_line, level + 2, f"Identifier: {name}")
 
-    # Body
-    prefix_body = custom_line_prefix('', level + 1)
-    lines.append(f"{prefix_body}(body) StmtBlock: ")
-    lines.extend(format_node(fn['body'], level + 2))
-
+    add_line(lines, "", level + 1, "(body) StmtBlock:")
+    lines.extend(format_node(fn["body"], level + 2))
     return lines
 
-
-def format_formal_declaration(formal_node, func_line_num, level):
-
+def format_statement_block(stmt_list, level):
     lines = []
-    var = formal_node["VarDecl"]
-
-    # (formals) VarDecl:  -> same line number as function
-    prefix_formals = custom_line_prefix(func_line_num, level)
-    lines.append(f"{prefix_formals}(formals) VarDecl: ")
-
-    # Type:
-    type_str = format_type(var['type'])
-    prefix_type = custom_line_prefix('', level + 1)
-    lines.append(f"{prefix_type}Type: {type_str}")
-
-    # Identifier:
-    if isinstance(var['identifier'], dict) and 'Identifier' in var['identifier']:
-        ident_line = var['identifier']['Identifier']['line_num']
-        ident_name = var['identifier']['Identifier']['name']
-    else:
-        ident_line = func_line_num
-        ident_name = str(var['identifier'])
-
-    prefix_ident = custom_line_prefix(func_line_num, level + 1)
-    lines.append(f"{prefix_ident}Identifier: {ident_name}")
-
-    return lines
-
-
-def format_variable_declaration(node, level=0):
-
-    lines = []
-    var = node['VarDecl']
-    line_num = var.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}VarDecl: ")
-
-    prefix_type = custom_line_prefix('', level + 1)
-    type_str = format_type(var['type'])
-    lines.append(f"{prefix_type}Type: {type_str}")
-
-    ident_prefix = custom_line_prefix(line_num, level + 1)
-    if isinstance(var['identifier'], dict) and 'Identifier' in var['identifier']:
-        ident_name = var['identifier']['Identifier']['name']
-    else:
-        ident_name = str(var['identifier'])
-    lines.append(f"{ident_prefix}Identifier: {ident_name}")
-
-    return lines
-
-
-def format_statement_block(node, level=0):
-
-    lines = []
-    stmts = node['StmtBlock']
-    for stmt in stmts:
+    for stmt in stmt_list:
         lines.extend(format_node(stmt, level))
     return lines
 
-
-def format_print_statement(node, level=0):
-
+def format_print_statement(stmt, level):
     lines = []
-    stmt = node['PrintStmt']
-    line_num = stmt.get('line_num', '')
+    line_num = stmt.get("line_num", "")
+    add_line(lines, "", level, "PrintStmt:")
+    for arg in stmt["args"]:
+        arg_lines = format_node(arg, level + 1)
+        insert_label_into_first_line(arg_lines, "(args)", level + 1)
+        lines.extend(arg_lines)
+    return lines
 
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}PrintStmt: ")
 
-    for arg in stmt['args']:
-        # If it's a string
-        if 'StringConstant' in arg:
-            arg_prefix = custom_line_prefix(line_num, level + 1)
-            val = arg['StringConstant']['value']
-            lines.append(f"{arg_prefix}(args) StringConstant: {val}")
+def format_var_decl(var, level):
+    lines = []
+    line_num = var.get("line_num", "")
+    add_line(lines, line_num, level, "VarDecl:")
+
+    var_type = var.get("type")
+    if isinstance(var_type, dict) and "Type" in var_type:
+        type_str = var_type["Type"]
+    else:
+        type_str = var_type
+
+    add_line(lines, "", level + 1, f"Type: {type_str}")
+
+    ident = var['identifier']
+    if isinstance(ident, dict) and 'Identifier' in ident:
+        ident_data = ident['Identifier']
+        ident_line = ident_data.get("line_num", line_num)
+        name = ident_data['name']
+    else:
+        ident_line = line_num
+        name = ident
+
+    add_line(lines, ident_line, level + 1, f"Identifier: {name}")
+    return lines
+
+def format_return_statement(node, level):
+    lines = []
+    line_num = node.get("line_num", "")
+    add_line(lines, line_num, level, "ReturnStmt:")
+    expr = node.get("expr", {})
+    if isinstance(expr, dict) and expr.get("Empty", False):
+        add_line(lines, "", level + 1, "Empty:")
+    else:
+        lines.extend(format_node(expr, level + 1))
+    return lines
+
+def format_assign_expr(node, level):
+    lines = []
+    line_num = node.get("line_num", "")
+    add_line(lines, line_num, level, "AssignExpr:")
+    lines.extend(format_node(node["target"], level + 1))
+    add_line(lines, line_num, level + 1, f"Operator: {node['operator']}")
+    lines.extend(format_node(node["value"], level + 1))
+    return lines
+
+def format_field_access(node, level, label_as_actuals=False, indent_identifier_extra=False, suppress_header=False):
+    lines = []
+    line_num = node.get("line_num", "")
+    if not suppress_header:
+        if label_as_actuals:
+            add_line(lines, line_num, level, "(actuals) FieldAccess:")
         else:
-            # e.g. FieldAccess, Call, etc.
-            arg_prefix = custom_line_prefix(line_num, level + 1)
-            # If it's a Call node, we might do directly "(args) Call: "
-            if 'Call' in arg:
-                lines.append(f"{arg_prefix}(args) Call: ")
-                lines.extend(format_node(arg, level + 2))
+            add_line(lines, line_num, level, "FieldAccess:")
+    ident = node['identifier']
+    if isinstance(ident, dict) and 'Identifier' in ident:
+        ident_data = ident['Identifier']
+        ident_line = ident_data.get("line_num", line_num)
+        name = ident_data['name']
+    else:
+        ident_line = line_num
+        name = ident
+    if suppress_header:
+        add_line(lines, ident_line, level, f"Identifier: {name}", extra_indent=0)
+    else:
+        add_line(lines, ident_line, level + 1, f"Identifier: {name}", extra_indent=0)
+    return lines
+
+def format_call(call, level, line_num=None, suppress_header=False):
+    lines = []
+    line_num = line_num or call.get("line_num", "")
+    if not suppress_header:
+        add_line(lines, line_num, level, "Call:")
+    # Shift identifier left one level
+    add_line(lines, line_num, level, f"Identifier: {call['identifier']}")
+    for arg in call["actuals"]:
+        for key in arg:
+            node_type = key
+            if node_type == "FieldAccess":
+                add_line(lines, line_num, level, f"(actuals) {node_type}:")
+                lines.extend(format_field_access(arg[node_type], level + 1, label_as_actuals=True, suppress_header=True))
+            elif node_type == "LogicalExpr":
+                add_line(lines, line_num, level, f"(actuals) {node_type}:")
+                lines.extend(format_logical_expr(arg[node_type], level + 1, label=False))
+            elif node_type == "ArithmeticExpr":
+                add_line(lines, line_num, level, f"(actuals) {node_type}:")
+                lines.extend(format_arithmetic_expr(arg[node_type], level + 1, label=False))
+            elif node_type == "Call":
+                add_line(lines, line_num, level, f"(actuals) {node_type}:")
+                lines.extend(format_call(arg[node_type], level + 1, suppress_header=True))
             else:
-                lines.append(f"{arg_prefix}(args)")
-                lines.extend(format_node(arg, level + 2))
-
+                add_line(lines, line_num, level, f"(actuals) {node_type}:")
+                lines.extend(format_node(arg[node_type], level + 1))
     return lines
 
-
-def format_call(node, level=0):
-
+def format_int_constant(node, level):
     lines = []
-    call = node['Call']
-    line_num = call.get('line_num', '')
-
-    # If the parent calls us with "(args) Call:", we only show children here.
-    # But if we come from somewhere else, we can do:
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}Identifier: {call['identifier']}")
-
-    if call["actuals"]:
-        prefix_act = custom_line_prefix(line_num, level)
-        lines.append(f"{prefix_act}(actuals) ")
-        for actual in call['actuals']:
-            lines.extend(format_node(actual, level + 1))
-
+    line_num = node.get("line_num", "")
+    value = node["value"]
+    add_line(lines, line_num, level, f"IntConstant: {value}")
     return lines
 
-
-def format_assignment_expression(node, level=0):
- 
+def format_double_constant(node, level):
     lines = []
-    expr = node['AssignExpr']
-    line_num = expr.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}AssignExpr: ")
-
-    # target
-    lines.extend(format_node(expr['target'], level + 1))
-
-    # Operator
-    op_prefix = custom_line_prefix(line_num, level + 1)
-    lines.append(f"{op_prefix}Operator: {expr['operator']}")
-
-    # value
-    lines.extend(format_node(expr['value'], level + 1))
-
+    line_num = node.get("line_num", "")
+    value = node["value"]
+    add_line(lines, line_num, level, f"DoubleConstant: {value}")
     return lines
 
+def format_string_constant(string_node, level):
+    line_num = string_node.get("line_num", "")
+    # Get the raw value from the node (if missing, default to an empty string).
+    value = string_node.get("value", "")
+    # Ensure the value is enclosed in double quotes.
+    if not value.startswith('"'):
+        value = '"' + value
+    if not value.endswith('"'):
+        value = value + '"'
+    return [f'{line_num:>3}{" " * (level * 3)}(args) StringConstant: {value}']
 
-def format_return_statement(node, level=0):
-
+def format_bool_constant(node, level):
     lines = []
-    stmt = node['ReturnStmt']
-    line_num = stmt.get('line_num', '')
+    line_num = node.get("line_num", "")
+    value = str(node["value"]).lower()
+    add_line(lines, line_num, level, f"BoolConstant: {value}")
+    return lines
 
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}ReturnStmt: ")
+def format_read_integer_expr(node, level):
+    lines = []
+    line_num = node.get("line_num", "")
+    add_line(lines, line_num, level, "ReadIntegerExpr:")
+    return lines
 
-    if stmt['expr'] == {"Empty": True}:
-        empty_prefix = custom_line_prefix(line_num, level + 1)
-        lines.append(f"{empty_prefix}Empty: ")
+def format_logical_expr(node, level, label=True):
+    lines = []
+    line_num = node.get("line_num", "")
+    if label:
+        add_line(lines, line_num, level, "LogicalExpr:")
+        next_level = level + 1
     else:
-        lines.extend(format_node(stmt['expr'], level + 1))
-
-    return lines
-
-
-def format_arithmetic_expression(node, level=0):
-
-    lines = []
-    expr = node['ArithmeticExpr']
-    line_num = expr.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}ArithmeticExpr: ")
-
-    lines.extend(format_node(expr['left'], level + 1))
-
-    op_prefix = custom_line_prefix(line_num, level + 1)
-    lines.append(f"{op_prefix}Operator: {expr['operator']}")
-
-    lines.extend(format_node(expr['right'], level + 1))
-
-    return lines
-
-
-def format_field_access(node, level=0):
-
-    lines = []
-    fa = node['FieldAccess']
-    line_num = fa.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}FieldAccess: ")
-
-    ident_prefix = custom_line_prefix(line_num, level + 1)
-    lines.append(f"{ident_prefix}Identifier: {fa['identifier']}")
-
-    return lines
-
-
-def format_read_integer_expr(node, level=0):
-
-    lines = []
-    expr = node['ReadIntegerExpr']
-    line_num = expr.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}ReadIntegerExpr: ")
-    return lines
-
-
-def format_logical_expression(node, level=0):
-
-    lines = []
-    expr = node['LogicalExpr']
-    line_num = expr.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}LogicalExpr: ")
-
-    if 'left' in expr and 'right' in expr:
-        lines.extend(format_node(expr['left'], level + 1))
-        op_prefix = custom_line_prefix(line_num, level + 1)
-        lines.append(f"{op_prefix}Operator: {expr['operator']}")
-        lines.extend(format_node(expr['right'], level + 1))
-    elif 'right' in expr:
-        op_prefix = custom_line_prefix(line_num, level + 1)
-        lines.append(f"{op_prefix}Operator: {expr['operator']}")
-        lines.extend(format_node(expr['right'], level + 1))
+        next_level = level
+    # If there's a "left" child, it's a binary logical expression (e.g., a && b).
+    if node.get("left") is not None:
+        lines.extend(format_node(node["left"], next_level))
+        add_line(lines, line_num, next_level, f"Operator: {node['operator']}")
+        lines.extend(format_node(node["right"], next_level))
     else:
-        malformed_prefix = custom_line_prefix(line_num, level + 1)
-        lines.append(f"{malformed_prefix}(Malformed LogicalExpr)")
-
+        # Unary operator (e.g., ! true)
+        add_line(lines, line_num, next_level, f"Operator: {node['operator']}")
+        lines.extend(format_node(node["right"], next_level))
     return lines
 
-
-def format_equality_expression(node, level=0):
-
+def format_equality_expr(node, level):
     lines = []
-    expr = node['EqualityExpr']
-    line_num = expr.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}EqualityExpr: ")
-
-    lines.extend(format_node(expr['left'], level + 1))
-    op_prefix = custom_line_prefix(line_num, level + 1)
-    lines.append(f"{op_prefix}Operator: {expr['operator']}")
-    lines.extend(format_node(expr['right'], level + 1))
-
+    line_num = node.get("line_num", "")
+    add_line(lines, line_num, level, "EqualityExpr:")
+    lines.extend(format_node(node["left"], level + 1))
+    add_line(lines, line_num, level + 1, f"Operator: {node['operator']}")
+    lines.extend(format_node(node["right"], level + 1))
     return lines
 
-
-def format_relational_expression(node, level=0):
-
+def format_relational_expr(node, level):
     lines = []
-    expr = node['RelationalExpr']
-    line_num = expr.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}RelationalExpr: ")
-
-    lines.extend(format_node(expr['left'], level + 1))
-    op_prefix = custom_line_prefix(line_num, level + 1)
-    lines.append(f"{op_prefix}Operator: {expr['operator']}")
-    lines.extend(format_node(expr['right'], level + 1))
-
+    line_num = node.get("line_num", "")
+    add_line(lines, line_num, level, "RelationalExpr:")
+    lines.extend(format_node(node["left"], level + 1))
+    add_line(lines, line_num, level + 1, f"Operator: {node['operator']}")
+    lines.extend(format_node(node["right"], level + 1))
     return lines
 
-
-def format_while_statement(node, level=0):
+def format_arithmetic_expr(node, level, label=True):
     lines = []
-    stmt = node['WhileStmt']
-    line_num = stmt.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}WhileStmt: ")
-
-    test_prefix = custom_line_prefix('', level + 1)
-    lines.append(f"{test_prefix}(test)")
-    lines.extend(format_node(stmt['test'], level + 2))
-
-    body_prefix = custom_line_prefix('', level + 1)
-    lines.append(f"{body_prefix}(body) StmtBlock: ")
-    lines.extend(format_node(stmt['body'], level + 2))
-
-    return lines
-
-
-def format_if_statement(node, level=0):
-
-    lines = []
-    stmt = node['IfStmt']
-    line_num = stmt.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}IfStmt: ")
-
-    test_prefix = custom_line_prefix('', level + 1)
-    lines.append(f"{test_prefix}(test)")
-    lines.extend(format_node(stmt['test'], level + 2))
-
-    then_prefix = custom_line_prefix('', level + 1)
-    lines.append(f"{then_prefix}(then)")
-    lines.extend(format_node(stmt['then'], level + 2))
-
-    if 'else' in stmt:
-        else_prefix = custom_line_prefix('', level + 1)
-        lines.append(f"{else_prefix}(else)")
-        lines.extend(format_node(stmt['else'], level + 2))
-
-    return lines
-
-
-def format_break_statement(node, level=0):
-
-    lines = []
-    brk = node['BreakStmt']
-    line_num = brk.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}BreakStmt: ")
-
-    return lines
-
-
-def format_for_statement(node, level=0):
-
-    lines = []
-    stmt = node['ForStmt']
-    line_num = stmt.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines.append(f"{prefix}ForStmt: ")
-
-    init_prefix = custom_line_prefix('', level + 1)
-    if stmt['init'] == {"Empty": True}:
-        lines.append(f"{init_prefix}(init) Empty: ")
+    line_num = node.get("line_num", "")
+    if label:
+        add_line(lines, line_num, level, "ArithmeticExpr:")
+        next_level = level + 1
     else:
-        lines.append(f"{init_prefix}(init)")
-        lines.extend(format_node(stmt['init'], level + 2))
-
-    test_prefix = custom_line_prefix('', level + 1)
-    if stmt['test'] == {"Empty": True}:
-        lines.append(f"{test_prefix}(test) Empty: ")
-    else:
-        lines.append(f"{test_prefix}(test)")
-        lines.extend(format_node(stmt['test'], level + 2))
-
-    step_prefix = custom_line_prefix('', level + 1)
-    if stmt['step'] == {"Empty": True}:
-        lines.append(f"{step_prefix}(step) Empty: ")
-    else:
-        lines.append(f"{step_prefix}(step)")
-        lines.extend(format_node(stmt['step'], level + 2))
-
-    body_prefix = custom_line_prefix('', level + 1)
-    lines.append(f"{body_prefix}(body) StmtBlock: ")
-    lines.extend(format_node(stmt['body'], level + 2))
-
+        next_level = level
+    if "left" in node:
+        lines.extend(format_node(node["left"], next_level))
+    if "operator" in node:
+        add_line(lines, line_num, next_level, f"Operator: {node['operator']}")
+    if "right" in node:
+        lines.extend(format_node(node["right"], next_level))
     return lines
 
-
-def format_string_constant(node, level=0):
-    const = node['StringConstant']
-    line_num = const.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines = [f"{prefix}StringConstant: {const['value']}"]
+def format_while_statement(node, level):
+    lines = []
+    # Print header without a line number.
+    add_line(lines, "", level, "WhileStmt:")
+    if "test" in node:
+        test_lines = format_node(node["test"], level + 1)
+        insert_label_into_first_line(test_lines, "(test)", level + 1)
+        lines.extend(test_lines)
+    if "body" in node:
+        add_line(lines, "", level + 1, "(body) StmtBlock:")
+        lines.extend(format_node(node["body"], level + 2))
     return lines
 
-
-def format_int_constant(node, level=0):
-    val = node['IntConstant']
-    line_num = val.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines = [f"{prefix}IntConstant: {val['value']}"]
+def format_for_statement(node, level):
+    lines = []
+    # Print header without a line number.
+    add_line(lines, "", level, "ForStmt:")
+    if "init" in node:
+        init = node["init"]
+        if isinstance(init, dict) and "Empty" in init:
+            add_line(lines, "", level + 1, "(init) Empty:")
+        else:
+            init_lines = format_node(init, level + 1)
+            insert_label_into_first_line(init_lines, "(init)", level + 1)
+            lines.extend(init_lines)
+    if "test" in node:
+        test_lines = format_node(node["test"], level + 1)
+        insert_label_into_first_line(test_lines, "(test)", level + 1)
+        lines.extend(test_lines)
+    if "step" in node:
+        step_lines = format_node(node["step"], level + 1)
+        insert_label_into_first_line(step_lines, "(step)", level + 1)
+        lines.extend(step_lines)
+    if "body" in node:
+        add_line(lines, "", level + 1, "(body) StmtBlock:")
+        lines.extend(format_node(node["body"], level + 2))
     return lines
 
-
-def format_double_constant(node, level=0):
-    val = node['DoubleConstant']
-    line_num = val.get('line_num', '')
-
-    prefix = custom_line_prefix(line_num, level)
-    lines = [f"{prefix}DoubleConstant: {val['value']}"]
+def format_if_statement(node, level):
+    lines = []
+    # Print header without a line number.
+    add_line(lines, "", level, "IfStmt:")
+    if "test" in node:
+        test_lines = format_node(node["test"], level + 1)
+        insert_label_into_first_line(test_lines, "(test)", level + 1)
+        lines.extend(test_lines)
+    if "then" in node:
+        then_lines = format_node(node["then"], level + 1)
+        insert_label_into_first_line(then_lines, "(then)", level + 1)
+        lines.extend(then_lines)
+    if "else" in node:
+        else_lines = format_node(node["else"], level + 1)
+        insert_label_into_first_line(else_lines, "(else)", level + 1)
+        lines.extend(else_lines)
     return lines
-
-
-def format_node(node, level=0):
-    """Dispatcher for each node type."""
-    if 'Program' in node:
-        return format_program(node, level)
-    elif 'FnDecl' in node:
-        return format_function_declaration(node, level)
-    elif 'VarDecl' in node:
-        return format_variable_declaration(node, level)
-    elif 'StmtBlock' in node:
-        return format_statement_block(node, level)
-    elif 'PrintStmt' in node:
-        return format_print_statement(node, level)
-    elif 'ReturnStmt' in node:
-        return format_return_statement(node, level)
-    elif 'WhileStmt' in node:
-        return format_while_statement(node, level)
-    elif 'IfStmt' in node:
-        return format_if_statement(node, level)
-    elif 'ForStmt' in node:
-        return format_for_statement(node, level)
-    elif 'BreakStmt' in node:
-        return format_break_statement(node, level)
-    elif 'Call' in node:
-        return format_call(node, level)
-    elif 'AssignExpr' in node:
-        return format_assignment_expression(node, level)
-    elif 'ArithmeticExpr' in node:
-        return format_arithmetic_expression(node, level)
-    elif 'FieldAccess' in node:
-        return format_field_access(node, level)
-    elif 'LogicalExpr' in node:
-        return format_logical_expression(node, level)
-    elif 'EqualityExpr' in node:
-        return format_equality_expression(node, level)
-    elif 'RelationalExpr' in node:
-        return format_relational_expression(node, level)
-    elif 'IntConstant' in node:
-        return format_int_constant(node, level)
-    elif 'DoubleConstant' in node:
-        return format_double_constant(node, level)
-    elif 'ReadIntegerExpr' in node:
-        return format_read_integer_expr(node, level)
-    elif 'StringConstant' in node:
-        return format_string_constant(node, level)
-    else:
-        return []
-
-
-def format_ast_string(ast_dict):
-    lines = format_node(ast_dict, 0)
-    return "\n".join(lines)
