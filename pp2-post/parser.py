@@ -26,21 +26,6 @@ def parse(token_stream):
     ast = format_ast_string(ast_dict)
     return ast
 
-def find_syntax_error(node):
-    if isinstance(node, dict):
-        if "SyntaxError" in node:
-            return node["SyntaxError"]
-        for value in node.values():
-            result = find_syntax_error(value)
-            if result:
-                return result
-    elif isinstance(node, list):
-        for item in node:
-            result = find_syntax_error(item)
-            if result:
-                return result
-    return None
-
 def parse_program(tokens, index, current_token):
     program_node = {"Program": []}
 
@@ -199,17 +184,31 @@ def parse_statement(tokens, index, current_token):
 
     if lookahead(current_token, "T_While"):
         return parse_while_statement(tokens, index, current_token)
-    
+
     if lookahead(current_token, "T_For"):
         return parse_for_statement(tokens, index, current_token)
-    
+
     if lookahead(current_token, "T_If"):
         return parse_if_statement(tokens, index, current_token)
 
     if lookahead(current_token, "T_Break"):
         return parse_break_statement(tokens, index, current_token)
 
-    # Fallback: expression statement (like `a;`)
+    if lookahead(current_token, "T_Identifier"):
+        next_token = tokens[index + 1] if index + 1 < len(tokens) else None
+
+        if next_token and next_token[4] == "'='":
+            stmt_node, index, current_token = parse_assignment(tokens, index, current_token, require_semicolon=True)
+            return stmt_node, index, current_token
+
+        elif next_token and next_token[4] == "'('":
+            call_node, index, current_token = parse_call(tokens, index, current_token)
+            if not lookahead(current_token, "';'"):
+                return syntax_error(tokens, index, "syntax error"), index, current_token
+            index, current_token = advance(tokens, index)
+            return call_node, index, current_token
+
+    # Fallback: try parsing as expression statement (e.g., `a;`)
     expr_stmt, new_index, new_token = parse_expression_statement(tokens, index, current_token)
     if isinstance(expr_stmt, dict) and "SyntaxError" not in expr_stmt:
         return expr_stmt, new_index, new_token

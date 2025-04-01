@@ -1,7 +1,7 @@
 from helper_functions import add_line, insert_label_into_first_line
 
 def format_ast_string(ast_dict):
-    print(ast_dict)
+    #print(ast_dict)
     lines = []
     lines.append("")  # blank line before
 
