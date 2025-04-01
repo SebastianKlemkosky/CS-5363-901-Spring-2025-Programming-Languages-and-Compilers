@@ -1,7 +1,7 @@
 from helper_functions import add_line, insert_label_into_first_line
 
 def format_ast_string(ast_dict):
-    #print(ast_dict)
+    print(ast_dict)
     lines = []
     lines.append("")  # blank line before
 
@@ -52,6 +52,8 @@ def format_node(node, level):
         return format_if_statement(node["IfStmt"], level)
     if "ForStmt" in node:
         return format_for_statement(node["ForStmt"], level)
+    if "BreakStmt" in node:
+        return format_break_statement(node["BreakStmt"], level)
     return []
 
 def format_program(program_list, level):
@@ -186,26 +188,25 @@ def format_call(call, level, line_num=None, suppress_header=False):
     line_num = line_num or call.get("line_num", "")
     if not suppress_header:
         add_line(lines, line_num, level, "Call:")
-    # Shift identifier left one level
-    add_line(lines, line_num, level, f"Identifier: {call['identifier']}")
+    add_line(lines, line_num, level + 1, f"Identifier: {call['identifier']}")
     for arg in call["actuals"]:
         for key in arg:
             node_type = key
             if node_type == "FieldAccess":
-                add_line(lines, line_num, level, f"(actuals) {node_type}:")
-                lines.extend(format_field_access(arg[node_type], level + 1, label_as_actuals=True, suppress_header=True))
+                add_line(lines, line_num, level + 1, f"(actuals) {node_type}:")
+                lines.extend(format_field_access(arg[node_type], level + 2, label_as_actuals=True, suppress_header=True))
             elif node_type == "LogicalExpr":
-                add_line(lines, line_num, level, f"(actuals) {node_type}:")
-                lines.extend(format_logical_expr(arg[node_type], level + 1, label=False))
+                add_line(lines, line_num, level + 1, f"(actuals) {node_type}:")
+                lines.extend(format_logical_expr(arg[node_type], level + 2, label=False))
             elif node_type == "ArithmeticExpr":
-                add_line(lines, line_num, level, f"(actuals) {node_type}:")
-                lines.extend(format_arithmetic_expr(arg[node_type], level + 1, label=False))
+                add_line(lines, line_num, level + 1, f"(actuals) {node_type}:")
+                lines.extend(format_arithmetic_expr(arg[node_type], level + 2, label=False))
             elif node_type == "Call":
-                add_line(lines, line_num, level, f"(actuals) {node_type}:")
-                lines.extend(format_call(arg[node_type], level + 1, suppress_header=True))
+                add_line(lines, line_num, level + 1, f"(actuals) {node_type}:")
+                lines.extend(format_call(arg[node_type], level + 2, suppress_header=True))
             else:
-                add_line(lines, line_num, level, f"(actuals) {node_type}:")
-                lines.extend(format_node(arg[node_type], level + 1))
+                add_line(lines, line_num, level + 1, f"(actuals) {node_type}:")
+                lines.extend(format_node(arg[node_type], level + 2))
     return lines
 
 def format_int_constant(node, level):
@@ -339,16 +340,26 @@ def format_if_statement(node, level):
     lines = []
     # Print header without a line number.
     add_line(lines, "", level, "IfStmt:")
+
     if "test" in node:
         test_lines = format_node(node["test"], level + 1)
         insert_label_into_first_line(test_lines, "(test)", level + 1)
         lines.extend(test_lines)
+
     if "then" in node:
         then_lines = format_node(node["then"], level + 1)
         insert_label_into_first_line(then_lines, "(then)", level + 1)
         lines.extend(then_lines)
+
     if "else" in node:
         else_lines = format_node(node["else"], level + 1)
         insert_label_into_first_line(else_lines, "(else)", level + 1)
         lines.extend(else_lines)
+
+    return lines
+
+def format_break_statement(node, level):
+    lines = []
+    line_num = node.get("line_num", "")
+    add_line(lines, line_num, level, "BreakStmt:")
     return lines

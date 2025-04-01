@@ -41,6 +41,7 @@
   9                        Identifier: a
   9                     Operator: ==
   9                     IntConstant: 5
+  9                  (then) BreakStmt: 
             IfStmt: 
  11            (test) EqualityExpr: 
  11               ArithmeticExpr: 
