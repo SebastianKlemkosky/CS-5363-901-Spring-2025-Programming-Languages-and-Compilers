@@ -1,7 +1,7 @@
 from helper_functions import add_line, insert_label_into_first_line
 
 def format_ast_string(ast_dict):
-    #print(ast_dict)
+    print(ast_dict)
     lines = []
     lines.append("")  # blank line before
 
@@ -114,7 +114,6 @@ def format_print_statement(stmt, level):
         lines.extend(arg_lines)
     return lines
 
-
 def format_var_decl(var, level):
     lines = []
     line_num = var.get("line_num", "")
@@ -225,14 +224,12 @@ def format_double_constant(node, level):
 
 def format_string_constant(string_node, level):
     line_num = string_node.get("line_num", "")
-    # Get the raw value from the node (if missing, default to an empty string).
     value = string_node.get("value", "")
-    # Ensure the value is enclosed in double quotes.
     if not value.startswith('"'):
         value = '"' + value
     if not value.endswith('"'):
         value = value + '"'
-    return [f'{line_num:>3}{" " * (level * 3)}(args) StringConstant: {value}']
+    return [f'{line_num:>3}{" " * (level * 3)}StringConstant: {value}']
 
 def format_bool_constant(node, level):
     lines = []

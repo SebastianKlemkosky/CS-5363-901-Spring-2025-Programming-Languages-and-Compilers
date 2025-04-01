@@ -31,8 +31,22 @@ def syntax_error(tokens, index, msg="syntax error", line_num=None, token_overrid
         )
     else:
         error_msg = f"*** Error at EOF\n*** {msg}"
-
     return {"SyntaxError": error_msg}
+
+def find_syntax_error(node):
+    if isinstance(node, dict):
+        if "SyntaxError" in node:
+            return node["SyntaxError"]
+        for value in node.values():
+            result = find_syntax_error(value)
+            if result:
+                return result
+    elif isinstance(node, list):
+        for item in node:
+            result = find_syntax_error(item)
+            if result:
+                return result
+    return None
 
 """Returns the line prefix with correct alignment for output (line number or 3 spaces)"""
 def get_line_content(tokens, line_num):
