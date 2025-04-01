@@ -1,7 +1,0 @@
-void main() {
-  int a;
-
-  if (a == 10) a;
-
-  return;
-}
