@@ -164,11 +164,13 @@ def format_assign_expr(node, level):
 def format_field_access(node, level, label_as_actuals=False, indent_identifier_extra=False, suppress_header=False):
     lines = []
     line_num = node.get("line_num", "")
+    
     if not suppress_header:
         if label_as_actuals:
             add_line(lines, line_num, level, "(actuals) FieldAccess:")
         else:
             add_line(lines, line_num, level, "FieldAccess:")
+
     ident = node['identifier']
     if isinstance(ident, dict) and 'Identifier' in ident:
         ident_data = ident['Identifier']
@@ -177,10 +179,17 @@ def format_field_access(node, level, label_as_actuals=False, indent_identifier_e
     else:
         ident_line = line_num
         name = ident
+
+    # Adjust indentation: +1 for normal nested identifiers, +1 more if indent_identifier_extra is set
     if suppress_header:
-        add_line(lines, ident_line, level, f"Identifier: {name}", extra_indent=0)
+        indent_level = level
     else:
-        add_line(lines, ident_line, level + 1, f"Identifier: {name}", extra_indent=0)
+        indent_level = level + 1
+
+    if indent_identifier_extra:
+        indent_level += 1
+
+    add_line(lines, ident_line, indent_level, f"Identifier: {name}")
     return lines
 
 def format_call(call, level, line_num=None, suppress_header=False):
