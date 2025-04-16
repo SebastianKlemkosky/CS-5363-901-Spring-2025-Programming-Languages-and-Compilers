@@ -23,8 +23,7 @@ def parse(token_stream):
     if syntax_error:
         return '\n' + syntax_error + '\n'
 
-    ast = format_ast_string(ast_dict)
-    return ast
+    return ast_dict
 
 def parse_program(tokens, index, current_token):
     program_node = {"Program": []}
@@ -656,7 +655,7 @@ def parse_primary(tokens, index, current_token):
     # Handle parenthesized expressions
     if lookahead(current_token, "'('"):
         index, current_token = advance(tokens, index)  # consume '('
-        expr_node, index, current_token = parse_arithmetic_expr(tokens, index, current_token, 0)
+        expr_node, index, current_token = parse_expression(tokens, index, current_token)
         if not lookahead(current_token, "')'"):
             return syntax_error(tokens, index, "syntax error"), index, current_token
         index, current_token = advance(tokens, index)

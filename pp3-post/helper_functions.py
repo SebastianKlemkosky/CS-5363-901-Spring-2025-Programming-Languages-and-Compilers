@@ -1,3 +1,9 @@
+def make_pointer_line(start_col, end_col, underline=False):
+    """Generate a line of spaces and carets under the offending column range."""
+    if underline:
+        return ' ' * (start_col - 1) + '^' * max(1, end_col - start_col + 1)
+    return ' ' * (start_col - 1) + '^'
+
 # Parser Helper Functions
 """Advances to the next token, returning the new index and current token."""
 def advance(tokens, index):
@@ -18,10 +24,8 @@ def syntax_error(tokens, index, msg="syntax error", line_num=None, token_overrid
         end_col = token[3]
         error_line = get_line_content(tokens, line_num)
 
-        if underline:
-            pointer_line = ' ' * (start_col - 1) + '^' * (end_col - start_col + 1)
-        else:
-            pointer_line = ' ' * (start_col - 1) + '^'
+        pointer_line = make_pointer_line(start_col, end_col, underline)
+
 
         error_msg = (
             f"*** Error line {line_num}.\n"
@@ -111,3 +115,18 @@ def insert_label_into_first_line(lines, label, base_level):
     text = first_line[prefix_length:].lstrip()
     lines[0] = prefix + f"{label} {text}"
     return lines
+
+# Semantic Analysis Helper Functions
+def semantic_error(tokens, offending_token, message):
+    line_num = offending_token[1]
+    start_col = offending_token[2]
+    end_col = offending_token[3]
+    error_line = get_line_content(tokens, line_num)
+    pointer_line = make_pointer_line(start_col, end_col)
+
+    return (
+        f"*** Error line {line_num}.\n"
+        f"{error_line}\n"
+        f"{pointer_line}\n"
+        f"*** {message}"
+    )
