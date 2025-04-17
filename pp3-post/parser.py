@@ -166,6 +166,9 @@ def parse_statement(tokens, index, current_token):
         index, current_token = advance(tokens, index)
         return parse_statement(tokens, index, current_token)
 
+    if lookahead(current_token, "'{'"):
+        return parse_statement_block(tokens, index, current_token)
+
     if lookahead(current_token, "T_Else"):
         return syntax_error(tokens, index, "syntax error", token_override=current_token, underline=True), index, current_token
 
@@ -213,7 +216,6 @@ def parse_statement(tokens, index, current_token):
         return expr_stmt, new_index, new_token
 
     return syntax_error(tokens, index, "syntax error"), index, current_token
-
 
 def parse_assignment(tokens, index, current_token, require_semicolon=True):
     line_num = current_token[1]
@@ -580,7 +582,7 @@ def parse_logical_expr(tokens, index, current_token):
     while current_token and current_token[0] in ('&&', '||'):
         op_token = current_token
         index, current_token = advance(tokens, index)
-        right, index, current_token = parse_equality_expr(tokens, index, current_token)
+        right, index, current_token = parse_logical_expr(tokens, index, current_token)
         left = {
             "LogicalExpr": {
                 "line_num": op_token[1],
@@ -629,17 +631,13 @@ def parse_relational_expr(tokens, index, current_token):
     return left, index, current_token
 
 def parse_arithmetic_expr(tokens, index, current_token, min_prec):
-    # Parse the left-hand side (base or nested expression)
     left, index, current_token = parse_primary(tokens, index, current_token)
 
     while current_token and current_token[0] in precedence and precedence[current_token[0]] >= min_prec:
         op_token = current_token
         op_prec = precedence[op_token[0]]
-        index, current_token = advance(tokens, index)  # consume operator
-
-        # Parse the right-hand side with tighter or equal precedence
+        index, current_token = advance(tokens, index)
         right, index, current_token = parse_arithmetic_expr(tokens, index, current_token, op_prec + 1)
-
         left = {
             "ArithmeticExpr": {
                 "line_num": op_token[1],
@@ -652,32 +650,50 @@ def parse_arithmetic_expr(tokens, index, current_token, min_prec):
     return left, index, current_token
 
 def parse_primary(tokens, index, current_token):
-    # Handle parenthesized expressions
     if lookahead(current_token, "'('"):
-        index, current_token = advance(tokens, index)  # consume '('
+        index, current_token = advance(tokens, index)
         expr_node, index, current_token = parse_expression(tokens, index, current_token)
         if not lookahead(current_token, "')'"):
             return syntax_error(tokens, index, "syntax error"), index, current_token
         index, current_token = advance(tokens, index)
         return expr_node, index, current_token
 
-    # Otherwise, fall back to your existing expression parser for literals and variables
     return parse_expression_leaf(tokens, index, current_token)
 
 def parse_expression_leaf(tokens, index, current_token):
     line_num = current_token[1]
 
+    if lookahead(current_token, "'-'"):
+        operator_token = current_token
+        index, current_token = advance(tokens, index)
+        right_expr, index, current_token = parse_expression(tokens, index, current_token)
+        result = {
+            "ArithmeticExpr": {
+                "line_num": line_num,
+                "operator": "-",
+                "left": {
+                    "IntConstant": {
+                        "line_num": line_num,
+                        "value": "0"
+                    }
+                },
+                "right": right_expr
+            }
+        }
+        return result, index, current_token
+
     if lookahead(current_token, "'!'"):
         operator_token = current_token
         index, current_token = advance(tokens, index)
         right_expr, index, current_token = parse_expression(tokens, index, current_token)
-        return {
+        result = {
             "LogicalExpr": {
                 "line_num": line_num,
                 "operator": operator_token[0],
                 "right": right_expr
             }
-        }, index, current_token
+        }
+        return result, index, current_token
 
     if lookahead(current_token, "T_ReadInteger"):
         index, current_token = advance(tokens, index)
@@ -687,11 +703,12 @@ def parse_expression_leaf(tokens, index, current_token):
         if not lookahead(current_token, "')'"):
             return syntax_error(tokens, index, "syntax error"), index, current_token
         index, current_token = advance(tokens, index)
-        return {
+        node = {
             "ReadIntegerExpr": {
                 "line_num": line_num
             }
-        }, index, current_token
+        }
+        return node, index, current_token
 
     if lookahead(current_token, "T_Identifier"):
         next_token = tokens[index + 1] if index + 1 < len(tokens) else None
@@ -736,7 +753,6 @@ def parse_expression_leaf(tokens, index, current_token):
         index, current_token = advance(tokens, index)
         return node, index, current_token
 
-
     if lookahead(current_token, "T_StringConstant"):
         node = {
             "StringConstant": {
@@ -746,6 +762,5 @@ def parse_expression_leaf(tokens, index, current_token):
         }
         index, current_token = advance(tokens, index)
         return node, index, current_token
-
 
     return syntax_error(tokens, index, "syntax error"), index, current_token

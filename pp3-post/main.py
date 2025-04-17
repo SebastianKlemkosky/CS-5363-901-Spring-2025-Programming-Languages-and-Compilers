@@ -3,13 +3,12 @@ from parser import parse
 from helper_functions import read_source_file
 from semantic_analyzer import check_semantics
 from format_nodes import format_ast_string
-
 import sys
 from contextlib import redirect_stdout
 
 
 def main():
-    file_path = r"pp3-post\samples\bad2.decaf"
+    file_path = r"pp3-post\samples\bad3.decaf"
     source_code = read_source_file(file_path)
 
     tokens = tokenize(source_code)
@@ -17,7 +16,7 @@ def main():
 
     ast_output = parse(tokens)
     print("Parsed type:", type(ast_output))
-
+    
     if isinstance(ast_output, str):
         output = ast_output
     else:

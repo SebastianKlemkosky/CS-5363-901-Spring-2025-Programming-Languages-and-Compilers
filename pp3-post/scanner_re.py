@@ -19,6 +19,7 @@ OPERATORS = {
     "<=": "T_LessEqual", 
     ">=": "T_GreaterEqual", 
     "==": "T_Equal",
+    "!=": "T_NotEqual",
     "+": "'+'",  
     "-": "'-'",  
     "*": "'*'",
