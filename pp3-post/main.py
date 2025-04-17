@@ -1,7 +1,7 @@
 from scanner_re import tokenize
 from parser import parse
 from helper_functions import read_source_file
-from semantic_analyzer import check_semantics  # NEW import
+from semantic_analyzer import check_semantics
 from format_nodes import format_ast_string
 
 import sys

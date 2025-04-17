@@ -1,5 +1,5 @@
 # semantic_analyzer.py
-from helper_functions import get_line_content, make_pointer_line, semantic_error
+from helper_functions import get_line_content, make_pointer_line, semantic_error, find_operator_token
 
 def check_semantics(ast, tokens):
     errors = []
@@ -72,13 +72,15 @@ def check_expr_types(node, scope, errors, tokens):
 
             print(f"[debug] {left_type} {operator} {right_type} on line {line_num}")
 
-            # Only report if both sides are valid (not already error from inner expression)
             if operator == "=" and left_type != "error" and right_type != "error" and left_type != right_type:
-                dummy_token = ("", line_num, 6, 6, "", "")
+                token = find_operator_token(tokens, line_num, "=")
+                col = token[2] if token else 6
+                end_col = token[3] if token else col
+                dummy_token = ("", line_num, col, end_col, "", "")
                 errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} = {right_type}"))
 
-            # Always walk RHS for nested expression analysis
             check_expr_types(value_expr, scope, errors, tokens)
+
 
         elif key == "ArithmeticExpr":
             left = value["left"]
@@ -108,13 +110,11 @@ def check_expr_types(node, scope, errors, tokens):
             check_expr_types(value, scope, errors, tokens)
 
 def get_expr_type(expr, scope, errors=None, tokens=None):
-    # Handle variables (field access)
     if "FieldAccess" in expr:
         ident = expr["FieldAccess"]["identifier"]
         name = ident["Identifier"]["name"] if isinstance(ident, dict) else ident
         return scope.get(name, "error")
 
-    # Handle constants
     if "IntConstant" in expr:
         return "int"
     if "DoubleConstant" in expr:
@@ -124,7 +124,6 @@ def get_expr_type(expr, scope, errors=None, tokens=None):
     if "StringConstant" in expr:
         return "string"
 
-    # Handle relational expressions: <, >, <=, >=, ==, !=
     if "RelationalExpr" in expr:
         left = expr["RelationalExpr"]["left"]
         right = expr["RelationalExpr"]["right"]
@@ -141,11 +140,13 @@ def get_expr_type(expr, scope, errors=None, tokens=None):
             return "bool"
 
         if errors is not None:
-            dummy_token = ("", line_num, 11, 11, "", "")
+            token = find_operator_token(tokens, line_num, operator)
+            col = token[2] if token else 11
+            end_col = token[3] if token else col
+            dummy_token = ("", line_num, col, end_col, "", "")
             errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
         return "error"
 
-    # Handle logical expressions: &&, ||
     if "LogicalExpr" in expr:
         left = expr["LogicalExpr"]["left"]
         right = expr["LogicalExpr"]["right"]
@@ -162,11 +163,13 @@ def get_expr_type(expr, scope, errors=None, tokens=None):
             return "bool"
 
         if errors is not None:
-            dummy_token = ("", line_num, 11, 11, "", "")
+            token = find_operator_token(tokens, line_num, operator)
+            col = token[2] if token else 11
+            end_col = token[3] if token else col
+            dummy_token = ("", line_num, col, end_col, "", "")
             errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
         return "error"
 
-    # Handle arithmetic expressions: +, -, *, /, %
     if "ArithmeticExpr" in expr:
         left = expr["ArithmeticExpr"]["left"]
         right = expr["ArithmeticExpr"]["right"]
@@ -179,17 +182,19 @@ def get_expr_type(expr, scope, errors=None, tokens=None):
         print(f"[debug] {left_type} {operator} {right_type} on line {line_num}")
 
         if "error" in (left_type, right_type):
-            return "error"  # avoid bubbling the same error again
+            return "error"
 
         if left_type == right_type and left_type in ("int", "double"):
             return left_type
 
         if errors is not None:
-            dummy_token = ("", line_num, 14, 14, "", "")
+            token = find_operator_token(tokens, line_num, operator)
+            col = token[2] if token else 14
+            end_col = token[3] if token else col
+            dummy_token = ("", line_num, col, end_col, "", "")
             errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
         return "error"
 
-    # Default fallback
     return "error"
 
 

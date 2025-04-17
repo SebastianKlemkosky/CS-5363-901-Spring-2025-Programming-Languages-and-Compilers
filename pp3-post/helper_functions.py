@@ -4,6 +4,12 @@ def make_pointer_line(start_col, end_col, underline=False):
         return ' ' * (start_col - 1) + '^' * max(1, end_col - start_col + 1)
     return ' ' * (start_col - 1) + '^'
 
+def find_operator_token(tokens, line_num, operator_text):
+    for tok in tokens:
+        if tok[1] == line_num and tok[0] == operator_text:
+            return tok  # (text, line_num, start_col, end_col, ...)
+    return None
+
 # Parser Helper Functions
 """Advances to the next token, returning the new index and current token."""
 def advance(tokens, index):
