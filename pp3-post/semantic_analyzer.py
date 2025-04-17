@@ -1,5 +1,6 @@
 # semantic_analyzer.py
-from helper_functions import get_line_content, make_pointer_line, semantic_error, find_operator_token
+from helper_functions import get_line_content, make_pointer_line, semantic_error, find_operator_token, find_token_on_line, find_test_expr_token
+
 
 def check_semantics(ast, tokens):
     errors = []
@@ -28,14 +29,12 @@ def process_program(program_node, tokens, global_scope, errors):
 def process_function(fn, tokens, global_scope, errors):
     local_scope = {}
 
-    # Add parameters (if any)
     for param in fn.get("formals", []):
         if "VarDecl" in param:
             name = param["VarDecl"]["identifier"]["Identifier"]["name"]
             type_str = param["VarDecl"]["type"]["Type"]
             local_scope[name] = type_str
 
-    # Add local variable declarations
     for stmt in fn["body"].get("StmtBlock", []):
         if "VarDecl" in stmt:
             var = stmt["VarDecl"]
@@ -47,67 +46,11 @@ def process_function(fn, tokens, global_scope, errors):
 
     print("[debug] local scope =", local_scope)
 
-    # Check each statement in the function body
+    # Get expected return type
+    expected_return = fn["type"]["Type"] if isinstance(fn["type"], dict) else fn["type"]
+
     for stmt in fn["body"].get("StmtBlock", []):
-        check_expr_types(stmt, local_scope, errors, tokens)
-
-def check_expr_types(node, scope, errors, tokens):
-    if isinstance(node, list):
-        for child in node:
-            check_expr_types(child, scope, errors, tokens)
-        return
-
-    if not isinstance(node, dict):
-        return
-
-    for key, value in node.items():
-        if key == "AssignExpr":
-            target = value["target"]
-            value_expr = value["value"]
-            operator = value["operator"]
-            line_num = value["line_num"]
-
-            left_type = get_expr_type(target, scope, errors, tokens)
-            right_type = get_expr_type(value_expr, scope, errors, tokens)
-
-            print(f"[debug] {left_type} {operator} {right_type} on line {line_num}")
-
-            if operator == "=" and left_type != "error" and right_type != "error" and left_type != right_type:
-                token = find_operator_token(tokens, line_num, "=")
-                col = token[2] if token else 6
-                end_col = token[3] if token else col
-                dummy_token = ("", line_num, col, end_col, "", "")
-                errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} = {right_type}"))
-
-            check_expr_types(value_expr, scope, errors, tokens)
-
-
-        elif key == "ArithmeticExpr":
-            left = value["left"]
-            right = value["right"]
-            operator = value["operator"]
-            line_num = value["line_num"]
-
-            left_type = get_expr_type(left, scope)
-            right_type = get_expr_type(right, scope)
-
-            print(f"[debug] {left_type} {operator} {right_type} on line {line_num}")
-
-            if "error" in (left_type, right_type):
-                return  # stop here — error already handled in subexpr
-
-            if left_type != right_type or left_type not in ("int", "double"):
-                dummy_token = ("", line_num, 12, 12, "", "")
-                errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
-                return  # don't descend further into invalid tree
-
-            # Recurse into children only if valid
-            check_expr_types(left, scope, errors, tokens)
-            check_expr_types(right, scope, errors, tokens)
-
-
-        elif isinstance(value, (dict, list)):
-            check_expr_types(value, scope, errors, tokens)
+        check_expr_types(stmt, local_scope, errors, tokens, inside_loop=False, expected_return=expected_return)
 
 def get_expr_type(expr, scope, errors=None, tokens=None):
     if "FieldAccess" in expr:
@@ -133,41 +76,46 @@ def get_expr_type(expr, scope, errors=None, tokens=None):
         left_type = get_expr_type(left, scope, errors, tokens)
         right_type = get_expr_type(right, scope, errors, tokens)
 
-        if "error" in (left_type, right_type):
-            return "error"
-
         if left_type == right_type and left_type in ("int", "double"):
             return "bool"
 
         if errors is not None:
             token = find_operator_token(tokens, line_num, operator)
-            col = token[2] if token else 11
-            end_col = token[3] if token else col
-            dummy_token = ("", line_num, col, end_col, "", "")
+            dummy_token = ("", line_num, token[2], token[3], "", "") if token else ("", line_num, 11, 11, "", "")
             errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
         return "error"
 
     if "LogicalExpr" in expr:
+        op = expr["LogicalExpr"]["operator"]
+        line_num = expr["LogicalExpr"]["line_num"]
+
+        if op == "!":  # Unary logical expr
+            right = expr["LogicalExpr"]["right"]
+            right_type = get_expr_type(right, scope, errors, tokens)
+
+            if right_type == "bool":
+                return "bool"
+
+            if errors is not None:
+                token = find_operator_token(tokens, line_num, "!")
+                dummy_token = ("", line_num, token[2], token[3], "", "") if token else ("", line_num, 6, 6, "", "")
+                errors.append(semantic_error(tokens, dummy_token, f"Incompatible operand: ! {right_type}"))
+            return "error"
+
+        # Binary logical expr
         left = expr["LogicalExpr"]["left"]
         right = expr["LogicalExpr"]["right"]
-        operator = expr["LogicalExpr"]["operator"]
-        line_num = expr["LogicalExpr"]["line_num"]
 
         left_type = get_expr_type(left, scope, errors, tokens)
         right_type = get_expr_type(right, scope, errors, tokens)
-
-        if "error" in (left_type, right_type):
-            return "error"
 
         if left_type == right_type == "bool":
             return "bool"
 
         if errors is not None:
-            token = find_operator_token(tokens, line_num, operator)
-            col = token[2] if token else 11
-            end_col = token[3] if token else col
-            dummy_token = ("", line_num, col, end_col, "", "")
-            errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
+            token = find_operator_token(tokens, line_num, op)
+            dummy_token = ("", line_num, token[2], token[3], "", "") if token else ("", line_num, 14, 14, "", "")
+            errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {op} {right_type}"))
         return "error"
 
     if "ArithmeticExpr" in expr:
@@ -189,13 +137,64 @@ def get_expr_type(expr, scope, errors=None, tokens=None):
 
         if errors is not None:
             token = find_operator_token(tokens, line_num, operator)
-            col = token[2] if token else 14
-            end_col = token[3] if token else col
-            dummy_token = ("", line_num, col, end_col, "", "")
+            dummy_token = ("", line_num, token[2], token[3], "", "") if token else ("", line_num, 14, 14, "", "")
             errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
         return "error"
 
     return "error"
 
+def check_expr_types(stmt, scope, errors, tokens, inside_loop=False, expected_return=None):
+    for key, value in stmt.items():
+        if key == "AssignExpr":
+            lhs_type = get_expr_type(value["target"], scope, errors, tokens)
+            rhs_type = get_expr_type(value["value"], scope, errors, tokens)
 
+            if lhs_type != rhs_type:
+                token = find_operator_token(tokens, value["line_num"], "=")
+                dummy = ("", value["line_num"], token[2], token[3], "", "") if token else ("", value["line_num"], 5, 5, "", "")
+                errors.append(semantic_error(tokens, dummy, f"Incompatible operands: {lhs_type} = {rhs_type}"))
+
+        elif key == "BreakStmt":
+            if not inside_loop:
+                token = find_token_on_line(tokens, value["line_num"], "T_Break")
+                dummy = token if token else ("", value["line_num"], 3, 8, "", "")
+                errors.append(semantic_error(tokens, dummy, "break is only allowed inside a loop"))
+
+        elif "ReturnStmt" in value:
+            line_num = value["ReturnStmt"]["line_num"]
+            if "value" in value["ReturnStmt"]:
+                actual_type = get_expr_type(value["ReturnStmt"]["value"], scope, errors, tokens)
+            else:
+                actual_type = "void"
+
+            if expected_return and actual_type != expected_return:
+                token = find_token_on_line(tokens, line_num, match="T_Return")
+                errors.append(semantic_error(tokens, token, f"Incompatible return: {actual_type} given, {expected_return} expected"))
+
+        elif key == "IfStmt":
+            test_type = get_expr_type(value["test"], scope, errors, tokens)
+            if test_type != "bool":
+                token = find_test_expr_token(tokens, value["line_num"])
+                dummy = token if token else ("", value["line_num"], 6, 6, "", "")
+                errors.append(semantic_error(tokens, dummy, "Test expression must have boolean type"))
+
+            check_expr_types(value["then"], scope, errors, tokens, inside_loop, expected_return)
+            if "else" in value:
+                check_expr_types(value["else"], scope, errors, tokens, inside_loop, expected_return)
+
+        elif key == "ForStmt":
+            check_expr_types(value["init"], scope, errors, tokens, inside_loop, expected_return)
+
+            test_type = get_expr_type(value["test"], scope, errors, tokens)
+            if test_type != "bool":
+                token = find_test_expr_token(tokens, value["line_num"])
+                dummy = token if token else ("", value["line_num"], 15, 25, "", "")
+                errors.append(semantic_error(tokens, dummy, "Test expression must have boolean type"))
+
+            check_expr_types(value["step"], scope, errors, tokens, inside_loop, expected_return)
+            check_expr_types(value["body"], scope, errors, tokens, inside_loop=True, expected_return=expected_return)
+
+        elif key == "StmtBlock":
+            for s in value:
+                check_expr_types(s, scope, errors, tokens, inside_loop, expected_return)
 

@@ -4,11 +4,8 @@ def make_pointer_line(start_col, end_col, underline=False):
         return ' ' * (start_col - 1) + '^' * max(1, end_col - start_col + 1)
     return ' ' * (start_col - 1) + '^'
 
-def find_operator_token(tokens, line_num, operator_text):
-    for tok in tokens:
-        if tok[1] == line_num and tok[0] == operator_text:
-            return tok  # (text, line_num, start_col, end_col, ...)
-    return None
+
+
 
 # Parser Helper Functions
 """Advances to the next token, returning the new index and current token."""
@@ -124,10 +121,17 @@ def insert_label_into_first_line(lines, label, base_level):
 
 # Semantic Analysis Helper Functions
 def semantic_error(tokens, offending_token, message):
-    line_num = offending_token[1]
-    start_col = offending_token[2]
-    end_col = offending_token[3]
-    error_line = get_line_content(tokens, line_num)
+    try:
+        line_num = offending_token[1]
+        start_col = offending_token[2]
+        end_col = offending_token[3]
+    except (IndexError, TypeError):
+        # Fallback values if the token is malformed
+        line_num = 1
+        start_col = 1
+        end_col = 1
+
+    error_line = get_line_content(tokens, line_num) or ""
     pointer_line = make_pointer_line(start_col, end_col)
 
     return (
@@ -136,3 +140,39 @@ def semantic_error(tokens, offending_token, message):
         f"{pointer_line}\n"
         f"*** {message}"
     )
+
+
+def find_operator_token(tokens, line_num, operator_text):
+    for tok in tokens:
+        if tok[1] == line_num and tok[0] == operator_text:
+            return tok  # (text, line_num, start_col, end_col, ...)
+    return None
+
+def find_token_on_line(tokens, line_num, match_text=None, match_type=None):
+    """
+    Returns the first token on a given line that matches either the token text or type.
+    Useful for caret positioning in semantic errors.
+    """
+    for tok in tokens:
+        if tok[1] == line_num:
+            if (match_text and tok[0] == match_text) or (match_type and tok[4] == match_type):
+                return tok
+    return None
+
+def find_test_expr_token(tokens, line_num):
+    """
+    Finds the token that represents the beginning of a test expression on the given line.
+    This is usually the first token inside the parentheses of an `if` or `for` statement.
+    """
+    paren_depth = 0
+    found_if_or_for = False
+
+    for i, tok in enumerate(tokens):
+        if tok[1] == line_num and tok[4] in ('T_If', 'T_For'):
+            found_if_or_for = True
+        elif found_if_or_for and tok[0] == '(':
+            paren_depth += 1
+        elif found_if_or_for and paren_depth > 0:
+            return tok  # return first token after '('
+    
+    return None
