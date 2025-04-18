@@ -148,16 +148,18 @@ def check_expr_types(stmt, scope, errors, tokens, inside_loop=False, expected_re
         if key == "AssignExpr":
             lhs_type = get_expr_type(value["target"], scope, errors, tokens)
             rhs_type = get_expr_type(value["value"], scope, errors, tokens)
-
             if lhs_type != rhs_type:
                 token = find_operator_token(tokens, value["line_num"], "=")
-                dummy = ("", value["line_num"], token[2], token[3], "", "") if token else ("", value["line_num"], 5, 5, "", "")
+                dummy = token if token else ("", value["line_num"], 5, 5, "", "")
                 errors.append(semantic_error(tokens, dummy, f"Incompatible operands: {lhs_type} = {rhs_type}"))
 
         elif key == "BreakStmt":
             if not inside_loop:
                 token = find_token_on_line(tokens, value["line_num"], "T_Break")
-                dummy = token if token else ("", value["line_num"], 3, 8, "", "")
+                if token:
+                    dummy = (token[0], token[1], token[2], token[3], "", "")
+                else:
+                    dummy = ("", value["line_num"], 3, 8, "", "")
                 errors.append(semantic_error(tokens, dummy, "break is only allowed inside a loop"))
 
         elif "ReturnStmt" in value:
@@ -169,7 +171,8 @@ def check_expr_types(stmt, scope, errors, tokens, inside_loop=False, expected_re
 
             if expected_return and actual_type != expected_return:
                 token = find_token_on_line(tokens, line_num, match="T_Return")
-                errors.append(semantic_error(tokens, token, f"Incompatible return: {actual_type} given, {expected_return} expected"))
+                dummy = token if token else ("", line_num, 10, 10, "", "")
+                errors.append(semantic_error(tokens, dummy, f"Incompatible return: {actual_type} given, {expected_return} expected"))
 
         elif key == "IfStmt":
             test_type = get_expr_type(value["test"], scope, errors, tokens)
@@ -197,4 +200,3 @@ def check_expr_types(stmt, scope, errors, tokens, inside_loop=False, expected_re
         elif key == "StmtBlock":
             for s in value:
                 check_expr_types(s, scope, errors, tokens, inside_loop, expected_return)
-
