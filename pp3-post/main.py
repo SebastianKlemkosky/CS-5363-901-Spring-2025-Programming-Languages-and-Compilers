@@ -5,9 +5,11 @@ from semantic_analyzer import check_semantics
 from format_nodes import format_ast_string
 import sys
 from contextlib import redirect_stdout
+import pprint
+
 
 def main():
-    file_path = r"pp3-post\samples\test.decaf"
+    file_path = r"pp3-post\samples\bad4.decaf"
     output_path = "output.txt"  # 📝 Output will be saved here
 
     source_code = read_source_file(file_path)
@@ -17,6 +19,8 @@ def main():
     if isinstance(ast_output, str):
         output = ast_output
     else:
+        #pprint.pprint(ast_output)
+
         semantic_errors = check_semantics(ast_output, tokens)
 
         if semantic_errors:

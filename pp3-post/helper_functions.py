@@ -4,6 +4,49 @@ def make_pointer_line(start_col, end_col, underline=False):
         return ' ' * (start_col - 1) + '^' * max(1, end_col - start_col + 1)
     return ' ' * (start_col - 1) + '^'
 
+def get_token_range_on_line(tokens, line_num):
+    """
+    Returns the (start_col, end_col) that spans all tokens on the given line.
+    Useful for underlining entire expressions like loop tests.
+    """
+    start_col = None
+    end_col = None
+
+    for token in tokens:
+        if token[1] == line_num:
+            if start_col is None or token[2] < start_col:
+                start_col = token[2]
+            if end_col is None or token[3] > end_col:
+                end_col = token[3]
+
+    return start_col, end_col
+
+def get_token_range_between(tokens, line_num, start_text, end_text):
+    """
+    Returns (start_col, end_col) for tokens between two delimiters on the same line.
+    E.g., between the first ';' and the second ';' in a for loop header.
+    """
+    start_index = None
+    end_index = None
+
+    # Collect all tokens on the target line
+    line_tokens = [t for t in tokens if t[1] == line_num]
+
+    # Find first and second semicolon (or custom markers)
+    for i, token in enumerate(line_tokens):
+        if token[0] == start_text and start_index is None:
+            start_index = i
+        elif token[0] == end_text and start_index is not None:
+            end_index = i
+            break
+
+    if start_index is not None and end_index is not None and end_index > start_index + 1:
+        start_col = line_tokens[start_index + 1][2]
+        end_col = line_tokens[end_index - 1][3]
+        return start_col, end_col
+
+    return None, None
+
 # Parser Helper Functions
 """Advances to the next token, returning the new index and current token."""
 def advance(tokens, index):
@@ -166,7 +209,7 @@ def lookup(name):
             return scope[name]
     return None
 
-def semantic_error(tokens, token, message):
+def semantic_error(tokens, token, message, underline=False):
     """
     Formats a semantic error message with line number and caret pointer.
     """
@@ -175,7 +218,7 @@ def semantic_error(tokens, token, message):
     end_col = token[3]
 
     error_line = get_line_content(tokens, line_num)
-    pointer_line = make_pointer_line(start_col, end_col)
+    pointer_line = make_pointer_line(start_col, end_col, underline)
 
     return (
         f"\n*** Error line {line_num}.\n"
@@ -183,7 +226,6 @@ def semantic_error(tokens, token, message):
         f"{pointer_line}\n"
         f"*** {message}\n"
     )
-
 
 def find_token_on_line(tokens, line_num, match_text=None):
     """
@@ -198,12 +240,21 @@ def find_token_on_line(tokens, line_num, match_text=None):
 
 def get_declared_type(decl):
     """
-    Given a VarDecl or type string, return the declared type.
-    Handles both dictionary-style declarations and raw types.
+    Given a VarDecl or a type dict, return the base type string.
+    Handles wrapped types like {'Type': 'int'}.
     """
-    if isinstance(decl, dict) and "type" in decl:
-        type_field = decl["type"]
+    if isinstance(decl, dict):
+        # Case: a wrapped type from a declaration or a 'Type' field
+        if "type" in decl:
+            type_field = decl["type"]
+        else:
+            type_field = decl
+
         if isinstance(type_field, dict) and "Type" in type_field:
             return type_field["Type"]
-        return type_field
-    return decl
+
+        # Direct string case (already unwrapped)
+        if isinstance(type_field, str):
+            return type_field
+
+    return decl  # fallback, e.g. already a string like 'int'
