@@ -4,9 +4,6 @@ def make_pointer_line(start_col, end_col, underline=False):
         return ' ' * (start_col - 1) + '^' * max(1, end_col - start_col + 1)
     return ' ' * (start_col - 1) + '^'
 
-
-
-
 # Parser Helper Functions
 """Advances to the next token, returning the new index and current token."""
 def advance(tokens, index):
@@ -120,59 +117,93 @@ def insert_label_into_first_line(lines, label, base_level):
     return lines
 
 # Semantic Analysis Helper Functions
-def semantic_error(tokens, offending_token, message):
-    try:
-        line_num = offending_token[1]
-        start_col = offending_token[2]
-        end_col = offending_token[3]
-    except (IndexError, TypeError):
-        # Fallback values if the token is malformed
-        line_num = 1
-        start_col = 1
-        end_col = 1
 
-    error_line = get_line_content(tokens, line_num) or ""
+def initialize_scope_system():
+    """
+    Resets the scope system and initializes the global scope.
+    """
+    global scope_stack, scope_names
+    scope_stack = [{}]
+    scope_names = ["global"]
+
+def push_scope(scope_label):
+    """
+    Pushes a new scope onto the stack.
+    Returns the current label for convenience.
+    """
+    scope_stack.append({})
+    scope_names.append(scope_label)
+    return scope_label
+
+def pop_scope():
+    """
+    Pops the current scope from the stack.
+    """
+    if scope_stack:
+        scope_stack.pop()
+        scope_names.pop()
+
+def declare(scope_label, name, entry):
+    """
+    Adds a name to the current scope dictionary.
+    """
+    current_scope = scope_stack[-1]
+    current_scope[name] = entry
+
+def is_declared_in_scope(scope_label, name):
+    """
+    Checks only the top (current) scope for the given name.
+    """
+    return name in scope_stack[-1]
+
+def lookup(name):
+    """
+    Searches all scopes from innermost to outermost.
+    Returns the first match found, or None.
+    """
+    for scope in reversed(scope_stack):
+        if name in scope:
+            return scope[name]
+    return None
+
+def semantic_error(tokens, token, message):
+    """
+    Formats a semantic error message with line number and caret pointer.
+    """
+    line_num = token[1]
+    start_col = token[2]
+    end_col = token[3]
+
+    error_line = get_line_content(tokens, line_num)
     pointer_line = make_pointer_line(start_col, end_col)
 
     return (
-        f"*** Error line {line_num}.\n"
+        f"\n*** Error line {line_num}.\n"
         f"{error_line}\n"
         f"{pointer_line}\n"
-        f"*** {message}"
+        f"*** {message}\n"
     )
 
 
-def find_operator_token(tokens, line_num, operator_text):
-    for tok in tokens:
-        if tok[1] == line_num and tok[0] == operator_text:
-            return tok  # (text, line_num, start_col, end_col, ...)
-    return None
+def find_token_on_line(tokens, line_num, match_text=None):
+    """
+    Temporary placeholder for finding a token on a given line.
+    Replace with full implementation later.
+    """
+    for token in tokens:
+        if token[1] == line_num:
+            if match_text is None or token[0] == match_text:
+                return token
+    return tokens[0] if tokens else None
 
-def find_token_on_line(tokens, line_num, match_text=None, match_type=None):
+def get_declared_type(decl):
     """
-    Returns the first token on a given line that matches either the token text or type.
-    Useful for caret positioning in semantic errors.
+    Given a VarDecl or type string, return the declared type.
+    Handles both dictionary-style declarations and raw types.
     """
-    for tok in tokens:
-        if tok[1] == line_num:
-            if (match_text and tok[0] == match_text) or (match_type and tok[4] == match_type):
-                return tok
-    return None
-
-def find_test_expr_token(tokens, line_num):
-    """
-    Finds the token that represents the beginning of a test expression on the given line.
-    This is usually the first token inside the parentheses of an `if` or `for` statement.
-    """
-    paren_depth = 0
-    found_if_or_for = False
-
-    for i, tok in enumerate(tokens):
-        if tok[1] == line_num and tok[4] in ('T_If', 'T_For'):
-            found_if_or_for = True
-        elif found_if_or_for and tok[0] == '(':
-            paren_depth += 1
-        elif found_if_or_for and paren_depth > 0:
-            return tok  # return first token after '('
-    
-    return None
+    if isinstance(decl, dict) and "type" in decl:
+        type_field = decl["type"]
+        if isinstance(type_field, dict) and "Type" in type_field:
+            return type_field["Type"]
+        return type_field
+    return decl

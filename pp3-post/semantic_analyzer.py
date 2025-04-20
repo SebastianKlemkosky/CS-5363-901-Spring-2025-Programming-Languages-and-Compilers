@@ -1,63 +1,164 @@
 # semantic_analyzer.py
-from helper_functions import get_line_content, make_pointer_line, semantic_error, find_operator_token, find_token_on_line, find_test_expr_token
+from helper_functions import (
+    semantic_error,
+    find_token_on_line,
+    get_line_content,
+    make_pointer_line,
+    push_scope,
+    pop_scope,
+    initialize_scope_system,
+    declare,
+    is_declared_in_scope,
+    lookup,
+    get_declared_type
+)
 
+DEBUG = False  # Set to True for debug prints
+errors = []  # Global list to accumulate semantic errors
+scope_stack = []         # List of dictionaries, one per scope level
+scope_names = []         # Optional: human-readable labels
 
-def check_semantics(ast, tokens):
+def check_semantics(ast_root, tokens):
+    """
+    Entry point for semantic analysis.
+    Initializes scopes and checks semantic rules.
+    """
+    global errors
     errors = []
-    global_scope = {}
 
-    if "Program" in ast:
-        process_program(ast["Program"], tokens, global_scope, errors)
+    initialize_scope_system()  
+
+    if "Program" in ast_root:
+        check_program(ast_root["Program"], tokens)
 
     return errors
 
-def process_program(program_node, tokens, global_scope, errors):
-    for decl in program_node:
-        if "FnDecl" in decl:
-            fn = decl["FnDecl"]
-            name = fn["identifier"]["Identifier"]["name"]
-            line_num = fn["identifier"]["Identifier"]["line_num"]
+def check_program(declarations, tokens):
+    """
+    Processes top-level declarations (global variables and functions).
+    """
+    for decl in declarations:
+        if "VarDecl" in decl:
+            check_variable_declaration(decl["VarDecl"], tokens, "global")
+        elif "FnDecl" in decl:
+            check_function_declaration(decl["FnDecl"], tokens)
 
-            if name in global_scope:
-                dummy_token = ("", line_num, 1, 1, "", "")
-                errors.append(semantic_error(tokens, dummy_token, f"Function '{name}' is already defined"))
-            else:
-                global_scope[name] = fn
+def check_variable_declaration(vardecl, tokens, scope_name):
+    """
+    Validates a variable declaration.
+    Adds it to the current scope if not already declared.
+    """
+    var_name = vardecl["identifier"]
+    var_type = vardecl["type"]
+    line_num = vardecl["line_num"]
 
-            process_function(fn, tokens, global_scope, errors)
+    # Check for duplicate declaration
+    if is_declared_in_scope(scope_name, var_name):
+        token = find_token_on_line(tokens, line_num, match_text=var_name)
+        msg = f"*** Declared identifier '{var_name}' more than once in same scope"
+        errors.append(semantic_error(tokens, token, msg))
+        return
 
-def process_function(fn, tokens, global_scope, errors):
-    local_scope = {}
+    # Add to current scope
+    declare(scope_name, var_name, var_type)
 
-    for param in fn.get("formals", []):
-        if "VarDecl" in param:
-            name = param["VarDecl"]["identifier"]["Identifier"]["name"]
-            type_str = param["VarDecl"]["type"]["Type"]
-            local_scope[name] = type_str
+def check_function_declaration(fndecl, tokens):
+    """
+    Validates a function declaration and its parameters/body.
+    Creates separate scopes for parameters and body.
+    """
+    fn_name = fndecl["identifier"]["Identifier"]["name"]
+    line_num = fndecl["line_num"]
 
-    for stmt in fn["body"].get("StmtBlock", []):
+    # Check for duplicate in global scope
+    if is_declared_in_scope("global", fn_name):
+        token = find_token_on_line(tokens, line_num, match_text=fn_name)
+        msg = f"*** Declared identifier '{fn_name}' more than once in same scope"
+        errors.append(semantic_error(tokens, token, msg))
+        return
+
+    # Declare function in global scope
+    declare("global", fn_name, fndecl)
+
+    # Enter parameter scope
+    param_scope = push_scope(f"params:{fn_name}")
+    for formal in fndecl["formals"]:
+        check_variable_declaration(formal["VarDecl"], tokens, param_scope)
+
+    # Enter function body scope
+    body_scope = push_scope(f"body:{fn_name}")
+    check_statement_block(fndecl["body"], tokens, body_scope)
+
+    pop_scope()  # Exit body scope
+    pop_scope()  # Exit param scope
+
+def check_function_call(call_node, tokens, scope_name):
+    """
+    Checks if a function being called is declared.
+    """
+    fn_name = call_node["identifier"]
+    line_num = call_node["line_num"]
+
+    fn_info = lookup(fn_name)
+    if fn_info is None:
+        token = find_token_on_line(tokens, line_num, match_text=fn_name)
+        errors.append(semantic_error(tokens, token, f"No declaration for Function '{fn_name}' found"))
+        return
+
+def check_statement_block(stmtblock, tokens, scope_name):
+    """
+    Checks all statements and variable declarations inside a block.
+    """
+    for stmt in stmtblock["StmtBlock"]:
         if "VarDecl" in stmt:
-            var = stmt["VarDecl"]
-            ident = var["identifier"]
-            name = ident["Identifier"]["name"] if isinstance(ident, dict) else ident
-            type_obj = var["type"]
-            type_str = type_obj["Type"] if isinstance(type_obj, dict) else type_obj
-            local_scope[name] = type_str
+            check_variable_declaration(stmt["VarDecl"], tokens, scope_name)
+        else:
+            check_statement(stmt, tokens, scope_name)
 
-    print("[debug] local scope =", local_scope)
+def check_statement(stmt, tokens, scope_name):
+    """
+    Dispatches to specific check functions based on statement type.
+    Each case is defined, but we are not calling the functions yet.
+    """
+    if "ReturnStmt" in stmt:
+        # check_return_statement(stmt["ReturnStmt"], tokens, scope_name)
+        pass
 
-    # Get expected return type
-    expected_return = fn["type"]["Type"] if isinstance(fn["type"], dict) else fn["type"]
+    elif "AssignExpr" in stmt:
+        check_assign_expression(stmt["AssignExpr"], tokens, scope_name)
+       
+    elif "BreakStmt" in stmt:
+        # check_break_statement(stmt["BreakStmt"], tokens)
+        pass
 
-    for stmt in fn["body"].get("StmtBlock", []):
-        check_expr_types(stmt, local_scope, errors, tokens, inside_loop=False, expected_return=expected_return)
+    elif "IfStmt" in stmt:
+        # check_if_statement(stmt["IfStmt"], tokens, scope_name)
+        pass
 
-def get_expr_type(expr, scope, errors=None, tokens=None):
-    if "FieldAccess" in expr:
-        ident = expr["FieldAccess"]["identifier"]
-        name = ident["Identifier"]["name"] if isinstance(ident, dict) else ident
-        return scope.get(name, "error")
+    elif "ForStmt" in stmt:
+        # check_for_statement(stmt["ForStmt"], tokens, scope_name)
+        pass
 
+    elif "WhileStmt" in stmt:
+        # check_while_statement(stmt["WhileStmt"], tokens, scope_name)
+        pass
+
+    elif "PrintStmt" in stmt:
+        # check_print_statement(stmt["PrintStmt"], tokens, scope_name)
+        pass
+
+    elif "Call" in stmt:
+        check_function_call(stmt["Call"], tokens, scope_name)
+
+
+    elif "StmtBlock" in stmt:
+        check_statement_block(stmt["StmtBlock"], tokens, scope_name)
+
+def get_expression_type(expr, tokens):
+    """
+    Determines the type of an expression.
+    Starts with constants and variables.
+    """
     if "IntConstant" in expr:
         return "int"
     if "DoubleConstant" in expr:
@@ -66,137 +167,62 @@ def get_expr_type(expr, scope, errors=None, tokens=None):
         return "bool"
     if "StringConstant" in expr:
         return "string"
+    if "ReadIntegerExpr" in expr:
+        return "int"
 
-    if "RelationalExpr" in expr:
-        left = expr["RelationalExpr"]["left"]
-        right = expr["RelationalExpr"]["right"]
-        operator = expr["RelationalExpr"]["operator"]
-        line_num = expr["RelationalExpr"]["line_num"]
-
-        left_type = get_expr_type(left, scope, errors, tokens)
-        right_type = get_expr_type(right, scope, errors, tokens)
-
-        if left_type == right_type and left_type in ("int", "double"):
-            return "bool"
-
-        if errors is not None:
-            token = find_operator_token(tokens, line_num, operator)
-            dummy_token = ("", line_num, token[2], token[3], "", "") if token else ("", line_num, 11, 11, "", "")
-            errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
-        return "error"
-
-    if "LogicalExpr" in expr:
-        op = expr["LogicalExpr"]["operator"]
-        line_num = expr["LogicalExpr"]["line_num"]
-
-        if op == "!":  # Unary logical expr
-            right = expr["LogicalExpr"]["right"]
-            right_type = get_expr_type(right, scope, errors, tokens)
-
-            if right_type == "bool":
-                return "bool"
-
-            if errors is not None:
-                token = find_operator_token(tokens, line_num, "!")
-                dummy_token = ("", line_num, token[2], token[3], "", "") if token else ("", line_num, 6, 6, "", "")
-                errors.append(semantic_error(tokens, dummy_token, f"Incompatible operand: ! {right_type}"))
+    if "FieldAccess" in expr:
+        var_name = expr["FieldAccess"]["identifier"]
+        decl = lookup(var_name)
+        if decl is None:
+            line_num = expr["FieldAccess"]["line_num"]
+            token = find_token_on_line(tokens, line_num, match_text=var_name)
+            errors.append(semantic_error(tokens, token, f"No declaration for Variable '{var_name}' found"))
             return "error"
-
-        # Binary logical expr
-        left = expr["LogicalExpr"]["left"]
-        right = expr["LogicalExpr"]["right"]
-
-        left_type = get_expr_type(left, scope, errors, tokens)
-        right_type = get_expr_type(right, scope, errors, tokens)
-
-        if left_type == right_type == "bool":
-            return "bool"
-
-        if errors is not None:
-            token = find_operator_token(tokens, line_num, op)
-            dummy_token = ("", line_num, token[2], token[3], "", "") if token else ("", line_num, 14, 14, "", "")
-            errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {op} {right_type}"))
-        return "error"
-
+        return get_declared_type(decl)
+    
     if "ArithmeticExpr" in expr:
-        left = expr["ArithmeticExpr"]["left"]
-        right = expr["ArithmeticExpr"]["right"]
-        operator = expr["ArithmeticExpr"]["operator"]
-        line_num = expr["ArithmeticExpr"]["line_num"]
+            node = expr["ArithmeticExpr"]
+            left_type = get_expression_type(node["left"], tokens)
+            right_type = get_expression_type(node["right"], tokens)
+            op = node["operator"]
+            line_num = node["line_num"]
 
-        left_type = get_expr_type(left, scope, errors, tokens)
-        right_type = get_expr_type(right, scope, errors, tokens)
+            # If either side is already an error, propagate the error without further checks
+            if left_type == "error" or right_type == "error":
+                return "error"
 
-        print(f"[debug] {left_type} {operator} {right_type} on line {line_num}")
+            if left_type != right_type or left_type not in ("int", "double"):
+                token = find_token_on_line(tokens, line_num, match_text=op)
+                errors.append(semantic_error(tokens, token, f"Incompatible operands: {left_type} {op} {right_type}"))
+                return "error"
 
-        if "error" in (left_type, right_type):
-            return "error"
-
-        if left_type == right_type and left_type in ("int", "double"):
             return left_type
 
-        if errors is not None:
-            token = find_operator_token(tokens, line_num, operator)
-            dummy_token = ("", line_num, token[2], token[3], "", "") if token else ("", line_num, 14, 14, "", "")
-            errors.append(semantic_error(tokens, dummy_token, f"Incompatible operands: {left_type} {operator} {right_type}"))
-        return "error"
 
-    return "error"
+    return "error"  # fallback if unsupported
 
-def check_expr_types(stmt, scope, errors, tokens, inside_loop=False, expected_return=None):
-    for key, value in stmt.items():
-        if key == "AssignExpr":
-            lhs_type = get_expr_type(value["target"], scope, errors, tokens)
-            rhs_type = get_expr_type(value["value"], scope, errors, tokens)
-            if lhs_type != rhs_type:
-                token = find_operator_token(tokens, value["line_num"], "=")
-                dummy = token if token else ("", value["line_num"], 5, 5, "", "")
-                errors.append(semantic_error(tokens, dummy, f"Incompatible operands: {lhs_type} = {rhs_type}"))
+def check_assign_expression(assign_node, tokens, scope_name):
+    """
+    Checks the structure of an assignment and extracts the target variable name.
+    """
+    line_num = assign_node["line_num"]
+    target = assign_node["target"]
+    value = assign_node["value"]
 
-        elif key == "BreakStmt":
-            if not inside_loop:
-                token = find_token_on_line(tokens, value["line_num"], "T_Break")
-                if token:
-                    dummy = (token[0], token[1], token[2], token[3], "", "")
-                else:
-                    dummy = ("", value["line_num"], 3, 8, "", "")
-                errors.append(semantic_error(tokens, dummy, "break is only allowed inside a loop"))
+    if "FieldAccess" in target:
+        var_name = target["FieldAccess"]["identifier"]
+        if DEBUG:
+            print(f"Assigning to variable: {var_name}")
 
-        elif "ReturnStmt" in value:
-            line_num = value["ReturnStmt"]["line_num"]
-            if "value" in value["ReturnStmt"]:
-                actual_type = get_expr_type(value["ReturnStmt"]["value"], scope, errors, tokens)
-            else:
-                actual_type = "void"
+        var_info = lookup(var_name)
+        if var_info is None:
+            token = find_token_on_line(tokens, line_num, match_text=var_name)
+            errors.append(semantic_error(tokens, token, f"No declaration for Variable '{var_name}' found"))
+            return
+        
+        lhs_type = get_declared_type(var_info)
+        rhs_type = get_expression_type(value, tokens)
 
-            if expected_return and actual_type != expected_return:
-                token = find_token_on_line(tokens, line_num, match="T_Return")
-                dummy = token if token else ("", line_num, 10, 10, "", "")
-                errors.append(semantic_error(tokens, dummy, f"Incompatible return: {actual_type} given, {expected_return} expected"))
-
-        elif key == "IfStmt":
-            test_type = get_expr_type(value["test"], scope, errors, tokens)
-            if test_type != "bool":
-                token = find_test_expr_token(tokens, value["line_num"])
-                dummy = token if token else ("", value["line_num"], 6, 6, "", "")
-                errors.append(semantic_error(tokens, dummy, "Test expression must have boolean type"))
-
-            check_expr_types(value["then"], scope, errors, tokens, inside_loop, expected_return)
-            if "else" in value:
-                check_expr_types(value["else"], scope, errors, tokens, inside_loop, expected_return)
-
-        elif key == "ForStmt":
-            check_expr_types(value["init"], scope, errors, tokens, inside_loop, expected_return)
-
-            test_type = get_expr_type(value["test"], scope, errors, tokens)
-            if test_type != "bool":
-                token = find_test_expr_token(tokens, value["line_num"])
-                dummy = token if token else ("", value["line_num"], 15, 25, "", "")
-                errors.append(semantic_error(tokens, dummy, "Test expression must have boolean type"))
-
-            check_expr_types(value["step"], scope, errors, tokens, inside_loop, expected_return)
-            check_expr_types(value["body"], scope, errors, tokens, inside_loop=True, expected_return=expected_return)
-
-        elif key == "StmtBlock":
-            for s in value:
-                check_expr_types(s, scope, errors, tokens, inside_loop, expected_return)
+        if lhs_type != rhs_type and lhs_type != "error" and rhs_type != "error":
+            token = find_token_on_line(tokens, line_num, match_text='=')
+            errors.append(semantic_error(tokens, token, f"Incompatible operands: {lhs_type} = {rhs_type}"))
