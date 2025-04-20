@@ -153,14 +153,12 @@ def check_function_call(call_node, tokens, scope_name):
 
     # Check for argument type mismatches
     for i, (formal, actual_expr) in enumerate(zip(formals, actuals), start=1):
-        print(f"🔍 Checking arg {i}")
         if "VarDecl" in formal:
             expected_type = get_declared_type(formal["VarDecl"])
         else:
             expected_type = get_declared_type(formal)
 
         actual_type = get_expression_type(actual_expr, tokens, scope_name)
-        print(f"[arg {i}] expected={expected_type}, actual={actual_type}")
 
         if expected_type != actual_type and actual_type != "error":
             # Attempt to find the token that corresponds to the actual expression
@@ -183,7 +181,6 @@ def check_function_call(call_node, tokens, scope_name):
             errors.append(semantic_error(tokens, token,
                 f"Incompatible argument {i}: {actual_type} given, {expected_type} expected", underline=True))
 
-
 def check_statement_block(stmtblock, tokens, scope_name):
     """
     Checks all statements and variable declarations inside a block.
@@ -198,6 +195,7 @@ def check_statement_block(stmtblock, tokens, scope_name):
         if "VarDecl" in stmt:
             check_variable_declaration(stmt["VarDecl"], tokens, scope_name)
         else:
+
             check_statement(stmt, tokens, scope_name)
 
 def check_statement(stmt, tokens, scope_name):
@@ -231,9 +229,24 @@ def check_statement(stmt, tokens, scope_name):
     elif "Call" in stmt:
         check_function_call(stmt["Call"], tokens, scope_name)
 
-
     elif "StmtBlock" in stmt:
         check_statement_block(stmt["StmtBlock"], tokens, scope_name)
+    
+    elif "ArithmeticExpr" in stmt:
+        get_expression_type(stmt["ArithmeticExpr"], tokens, scope_name)
+
+    elif "LogicalExpr" in stmt:
+        get_expression_type(stmt["LogicalExpr"], tokens, scope_name)
+
+    elif "EqualityExpr" in stmt:
+        get_expression_type(stmt["EqualityExpr"], tokens, scope_name)
+
+    elif "RelationalExpr" in stmt:
+        get_expression_type(stmt["RelationalExpr"], tokens, scope_name)
+
+    elif "Call" in stmt:
+        get_expression_type(stmt["Call"], tokens, scope_name)
+
 
 def get_expression_type(expr, tokens, scope_name):
     """
@@ -254,43 +267,59 @@ def get_expression_type(expr, tokens, scope_name):
     if "FieldAccess" in expr:
         var_name = expr["FieldAccess"]["identifier"]
         decl = lookup(var_name)
-
         if decl is None:
             line_num = expr["FieldAccess"]["line_num"]
             token = find_token_on_line(tokens, line_num, match_text=var_name)
             errors.append(semantic_error(tokens, token, f"No declaration for Variable '{var_name}' found"))
             return "error"
         return get_declared_type(decl)
-    
+
+    # ArithmeticExpr (wrapped or bare)
     if "ArithmeticExpr" in expr:
-            node = expr["ArithmeticExpr"]
-            left_type = get_expression_type(node["left"], tokens, scope_name)
-            right_type = get_expression_type(node["right"], tokens, scope_name)
+        node = expr["ArithmeticExpr"]
+    elif "operator" in expr and "left" in expr and "right" in expr:
+        if expr["operator"] in ["+", "-", "*", "/", "%"]:
+            node = expr
+        else:
+            node = None
+    else:
+        node = None
 
-            op = node["operator"]
-            line_num = node["line_num"]
+    if node:
+        left_type = get_expression_type(node["left"], tokens, scope_name)
+        right_type = get_expression_type(node["right"], tokens, scope_name)
+        op = node["operator"]
+        line_num = node["line_num"]
 
-            # If either side is already an error, propagate the error without further checks
-            if left_type == "error" or right_type == "error":
-                return "error"
+        if left_type == "error" or right_type == "error":
+            return "error"
 
-            if left_type != right_type or left_type not in ("int", "double"):
-                token = find_token_on_line(tokens, line_num, match_text=op)
-                errors.append(semantic_error(tokens, token, f"Incompatible operands: {left_type} {op} {right_type}"))
-                return "error"
+        if left_type != right_type or left_type not in ("int", "double"):
+            token = find_token_on_line(tokens, line_num, match_text=op)
+            msg = semantic_error(tokens, token, f"Incompatible operands: {left_type} {op} {right_type}", underline=True)
+            errors.append(msg)
+            return "error"
 
-            return left_type
+        return left_type
 
+    # LogicalExpr (wrapped or bare)
     if "LogicalExpr" in expr:
         node = expr["LogicalExpr"]
+    elif "operator" in expr:
+        if expr["operator"] in ["&&", "||", "!"]:
+            node = expr
+        else:
+            node = None
+    else:
+        node = None
+
+    if node and "operator" in node:
         op = node["operator"]
         line_num = node["line_num"]
 
         if "left" in node:
             left_type = get_expression_type(node["left"], tokens, scope_name)
             right_type = get_expression_type(node["right"], tokens, scope_name)
-
-
             if left_type != "bool" or right_type != "bool":
                 token = find_token_on_line(tokens, line_num, match_text=op)
                 errors.append(semantic_error(tokens, token, f"Incompatible operands: {left_type} {op} {right_type}", underline=True))
@@ -301,12 +330,17 @@ def get_expression_type(expr, tokens, scope_name):
                 token = find_token_on_line(tokens, line_num, match_text=op)
                 errors.append(semantic_error(tokens, token, f"Incompatible operand: {op} {right_type}", underline=True))
                 return "error"
-
         return "bool"
 
-    
+    # EqualityExpr (wrapped or bare)
     if "EqualityExpr" in expr:
         node = expr["EqualityExpr"]
+    elif "operator" in expr and expr["operator"] in ["==", "!="]:
+        node = expr
+    else:
+        node = None
+
+    if node:
         left_type = get_expression_type(node["left"], tokens, scope_name)
         right_type = get_expression_type(node["right"], tokens, scope_name)
         op = node["operator"]
@@ -315,13 +349,19 @@ def get_expression_type(expr, tokens, scope_name):
         if left_type != right_type:
             token = find_token_on_line(tokens, line_num, match_text=op)
             errors.append(semantic_error(tokens, token, f"Incompatible operands: {left_type} {op} {right_type}", underline=True))
-
             return "error"
 
         return "bool"
 
+    # RelationalExpr (wrapped or bare)
     if "RelationalExpr" in expr:
         node = expr["RelationalExpr"]
+    elif "operator" in expr and expr["operator"] in ["<", "<=", ">", ">="]:
+        node = expr
+    else:
+        node = None
+
+    if node:
         left_type = get_expression_type(node["left"], tokens, scope_name)
         right_type = get_expression_type(node["right"], tokens, scope_name)
         op = node["operator"]
@@ -337,17 +377,16 @@ def get_expression_type(expr, tokens, scope_name):
 
         return "bool"
 
+    # Function Call
     if "Call" in expr:
         node = expr["Call"]
         check_function_call(node, tokens, scope_name)
-
-        # Return the function's return type
         fn_info = lookup(node["identifier"])
         if fn_info and "type" in fn_info:
             return get_declared_type(fn_info["type"])
-        return "int"  # default fallback
+        return "int"
 
-    return "error"  # fallback if unsupported
+    return "error"
 
 def check_assign_expression(assign_node, tokens, scope_name):
     """
