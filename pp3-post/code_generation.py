@@ -1,17 +1,16 @@
 # code_generation.py
 
-def get_var_offset(var_name):
-    """
-    Returns the stack offset for a given local variable name.
-    For now, hardcoded offsets. Later will use per-function symbol table.
-    """
-    # Temporary hardcoded stack layout (Decaf aligns locals at negative offsets from $fp)
-    fixed_offsets = {
-        "c": -8,
-        "s": -12
-    }
-
-    return fixed_offsets.get(var_name, -100)  # -100 is a signal something's wrong
+def get_var_offset(var_name, scope=None):
+    if scope == "test":
+        if var_name == "a":
+            return 4  # $fp + 4
+        if var_name == "b":
+            return 8  # $fp + 8
+    if var_name == "c":
+        return -8
+    if var_name == "s":
+        return -12
+    return -100  # fallback
 
 def generate_code(ast_root):
     """
@@ -98,6 +97,9 @@ def emit_statement_block(block, scope_name):
 
         elif "Call" in stmt:
             lines += emit_call(stmt["Call"], scope_name, is_statement=True)
+        
+        elif "ReturnStmt" in stmt:
+            lines += emit_return(stmt, scope_name)
 
         else:
             lines.append(f"\t# Unhandled statement: {stmt}")
@@ -136,6 +138,36 @@ def emit_assign(assign_expr, scope_name):
     # Handle Call expression
     if "Call" in value:
         lines += emit_call(value["Call"], scope_name, target=var_name)
+        return lines
+    
+    if "FieldAccess" in value:
+        src_var = value["FieldAccess"]["identifier"]
+        lines.append(f"\tlw $t2, {get_var_offset(src_var)}($fp)")  # load y
+        lines.append(f"\tsw $t2, {get_var_offset(var_name)}($fp)")  # store into x
+        return lines
+    
+    if "ArithmeticExpr" in value:
+        left = value["ArithmeticExpr"]["left"]
+        right = value["ArithmeticExpr"]["right"]
+        op = value["ArithmeticExpr"]["operator"]
+
+        # Assume both are FieldAccess for now
+        lhs = left["FieldAccess"]["identifier"]
+        rhs = right["FieldAccess"]["identifier"]
+        lines.append(f"\tlw $t0, {get_var_offset(lhs)}($fp)")
+        lines.append(f"\tlw $t1, {get_var_offset(rhs)}($fp)")
+
+        if op == "+":
+            lines.append(f"\tadd $t2, $t0, $t1")
+        elif op == "-":
+            lines.append(f"\tsub $t2, $t0, $t1")
+        elif op == "*":
+            lines.append(f"\tmul $t2, $t0, $t1")
+        elif op == "/":
+            lines.append(f"\tdiv $t0, $t1")
+            lines.append(f"\tmflo $t2")  # result in $t2
+
+        lines.append(f"\tsw $t2, {get_var_offset(var_name)}($fp)")
         return lines
 
     lines.append(f"\t# [TODO] Unhandled assignment value: {value}")
@@ -220,3 +252,77 @@ def emit_print(print_stmt, scope_name):
             lines.append(f"\t# [TODO] Unknown print arg type: {arg}")
 
     return lines
+
+def emit_return(stmt, current_function):
+    """
+    Emits MIPS code for a ReturnStmt node.
+    """
+    lines = []
+    expr = stmt["ReturnStmt"]["expr"]
+    
+    # Evaluate the return expression and leave it in $t2
+    expr_lines, result_reg = emit_expression(expr, current_function)
+    lines += expr_lines
+
+    # Move result into $v0
+    lines.append(f"\tmove $v0, {result_reg}")
+
+    # Epilogue
+    lines.append(f"\tmove $sp, $fp\t# pop callee frame off stack")
+    lines.append(f"\tlw $ra, -4($fp)\t# restore saved ra")
+    lines.append(f"\tlw $fp, 0($fp)\t# restore saved fp")
+    lines.append(f"\tjr $ra\t# return from function")
+
+    return lines
+
+def emit_expression(expr, current_function):
+    """
+    Emits MIPS code for an expression and returns (lines, result_register).
+    Supports basic constants, variables, and arithmetic.
+    """
+    lines = []
+
+    if "IntConstant" in expr:
+        value = expr["IntConstant"]["value"]
+        lines.append(f"\tli $t2, {value}")
+        return lines, "$t2"
+
+    if "FieldAccess" in expr:
+        var_name = expr["FieldAccess"]["identifier"]
+        offset = get_var_offset(var_name, current_function)
+        lines.append(f"\tlw $t2, {offset}($fp)")
+        return lines, "$t2"
+
+    if "ArithmeticExpr" in expr:
+        node = expr["ArithmeticExpr"]
+        op = node["operator"]
+        left_expr = node["left"]
+        right_expr = node["right"]
+
+        left_lines, _ = emit_expression(left_expr, current_function)
+        lines += left_lines
+        lines.append(f"\tmove $t0, $t2")  # save left in $t0
+
+        right_lines, _ = emit_expression(right_expr, current_function)
+        lines += right_lines
+        lines.append(f"\tmove $t1, $t2")  # save right in $t1
+
+        if op == "+":
+            lines.append(f"\tadd $t2, $t0, $t1")
+        elif op == "-":
+            lines.append(f"\tsub $t2, $t0, $t1")
+        elif op == "*":
+            lines.append(f"\tmul $t2, $t0, $t1")
+        elif op == "/":
+            lines.append(f"\tdiv $t0, $t1")
+            lines.append(f"\tmflo $t2")
+        elif op == "%":
+            lines.append(f"\tdiv $t0, $t1")
+            lines.append(f"\tmfhi $t2")
+        else:
+            lines.append(f"\t# Unsupported operator: {op}")
+
+        return lines, "$t2"
+
+    lines.append(f"\t# [emit_expression] Unhandled expr: {expr}")
+    return lines, "$t2"

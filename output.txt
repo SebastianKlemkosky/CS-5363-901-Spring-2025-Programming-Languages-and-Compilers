@@ -50,7 +50,16 @@ _test:
 	sw $ra, 4($sp)	# save ra
 	addiu $fp, $sp, 8	# set up new fp
 	subu $sp, $sp, 24	# space for locals/temps
-	# Unhandled statement: {'ReturnStmt': {'line_num': 14, 'expr': {'ArithmeticExpr': {'line_num': 14, 'left': {'FieldAccess': {'line_num': 14, 'identifier': 'a'}}, 'operator': '+', 'right': {'FieldAccess': {'line_num': 14, 'identifier': 'b'}}}}}}
+	lw $t2, 4($fp)
+	move $t0, $t2
+	lw $t2, 8($fp)
+	move $t1, $t2
+	add $t2, $t0, $t1
+	move $v0, $t2
+	move $sp, $fp	# pop callee frame off stack
+	lw $ra, -4($fp)	# restore saved ra
+	lw $fp, 0($fp)	# restore saved fp
+	jr $ra	# return from function
 	# EndFunc
 	move $sp, $fp	# pop callee frame off stack
 	lw $ra, -4($fp)	# restore saved ra
