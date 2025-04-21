@@ -122,7 +122,6 @@ def check_function_call(call_node, tokens, scope_name):
     if fn_name == "Print":
         for i, actual_expr in enumerate(actuals, start=1):
             actual_type = get_expression_type(actual_expr, tokens, scope_name)
-            print(f"🔍 PRINT arg {i}: {actual_expr} → type={actual_type}")
 
             if actual_type not in ("int", "bool", "string") and actual_type != "error":
                 line = actual_expr.get("line_num", line_num)
@@ -132,31 +131,21 @@ def check_function_call(call_node, tokens, scope_name):
                 # Try to locate the actual constant or identifier token
                 if "DoubleConstant" in actual_expr:
                     match_text = str(actual_expr["DoubleConstant"]["value"])
-                    print(f"🔍 Trying to match DOUBLE: {match_text} on line {line}")
                     token = find_token_on_line(tokens, line, match_text=match_text)
                 elif "IntConstant" in actual_expr:
                     match_text = actual_expr["IntConstant"]["value"]
-                    print(f"🔍 Trying to match INT: {match_text} on line {line}")
                     token = find_token_on_line(tokens, line, match_text=match_text)
                 elif "BoolConstant" in actual_expr:
                     match_text = actual_expr["BoolConstant"]["value"]
-                    print(f"🔍 Trying to match BOOL: {match_text} on line {line}")
                     token = find_token_on_line(tokens, line, match_text=match_text)
                 elif "StringConstant" in actual_expr:
                     match_text = actual_expr["StringConstant"]["value"]
-                    print(f"🔍 Trying to match STRING: {match_text} on line {line}")
                     token = find_token_on_line(tokens, line, match_text=match_text)
                 elif "FieldAccess" in actual_expr:
                     match_text = actual_expr["FieldAccess"]["identifier"]
                     token = find_token_on_line(tokens, line, match_text=match_text)
                 else:
-                    print(f"⚠️ No specific match found, falling back to line {line}")
                     token = find_token_on_line(tokens, line)
-
-                if token:
-                    print(f"✅ Found token for arg {i}: {token}")
-                else:
-                    print(f"❌ Could not find token for arg {i}, using fallback token")
 
                 # Now emit the semantic error under the actual argument
                 errors.append(semantic_error(
@@ -314,6 +303,8 @@ def get_expression_type(expr, tokens, scope_name):
         return "string"
     if "ReadIntegerExpr" in expr:
         return "int"
+    if "ReadLine" in expr:
+        return "string"
 
     if "FieldAccess" in expr:
         var_name = expr["FieldAccess"]["identifier"]
@@ -480,7 +471,48 @@ def check_if_statement(if_stmt, tokens, scope_name):
     Checks the condition and both branches of an if statement.
     """
     if "test" in if_stmt:
-        get_expression_type(if_stmt["test"], tokens, scope_name)
+        test_expr = if_stmt["test"]
+        test_type = get_expression_type(test_expr, tokens, scope_name)
+        if test_type != "bool" and test_type != "error":
+            line_num = test_expr.get("line_num", if_stmt["line_num"])
+            start_tok = None
+            end_tok = None
+
+            # Get all tokens on this line
+            line_tokens = [tok for tok in tokens if tok[1] == line_num]
+
+            # Find the first token after '('
+            for i, tok in enumerate(line_tokens):
+                if tok[0] == "(" and i + 1 < len(line_tokens):
+                    start_tok = line_tokens[i + 1]
+                    break
+
+            # Find the last token before ')'
+            for i in range(len(line_tokens) - 1, -1, -1):
+                if line_tokens[i][0] == ")" and i - 1 >= 0:
+                    end_tok = line_tokens[i - 1]
+                    break
+
+            # Fallback to a narrower range if needed
+            if not start_tok:
+                start_tok = find_token_on_line(tokens, line_num)
+            if not end_tok:
+                end_tok = start_tok
+
+            token = (
+                "[if-test-expr]",
+                line_num,
+                start_tok[2],
+                end_tok[3],
+                None,
+                None,
+            )
+
+            errors.append(
+                semantic_error(
+                    tokens, token, "Test expression must have boolean type", underline=True
+                )
+            )
 
     if "then" in if_stmt:
         check_statement(if_stmt["then"], tokens, scope_name)
@@ -490,50 +522,79 @@ def check_if_statement(if_stmt, tokens, scope_name):
 
 def check_for_statement(for_stmt, tokens, scope_name):
     global inside_loop
-    inside_loop += 1  # Enter loop context
+    inside_loop += 1
 
-    # Check initializer (optional)
     if "init" in for_stmt and for_stmt["init"] is not None:
         check_statement(for_stmt["init"], tokens, scope_name)
 
-    # Check test expression
     if "test" in for_stmt and for_stmt["test"] is not None:
-        test_type = get_expression_type(for_stmt["test"], tokens, scope_name)
+        test_expr = for_stmt["test"]
+        test_type = get_expression_type(test_expr, tokens, scope_name)
         if test_type != "bool" and test_type != "error":
-            line_num = for_stmt["line_num"]
+            line_num = test_expr.get("line_num", for_stmt["line_num"])
+            line_tokens = [tok for tok in tokens if tok[1] == line_num]
+            start_tok = None
+            end_tok = None
 
-            # Use helper to find column span on this line
-            start_col, end_col = get_token_range_between(tokens, line_num, ";", ";")
+            for i, tok in enumerate(line_tokens):
+                if tok[0] == ";" and i + 1 < len(line_tokens):
+                    start_tok = line_tokens[i + 1]
+                    break
 
-            if start_col is not None and end_col is not None:
-                fake_token = ("[for-test]", line_num, start_col, end_col, None, None)
-                errors.append(semantic_error(tokens, fake_token, "Test expression must have boolean type", underline=True))
+            for i in range(len(line_tokens) - 1, -1, -1):
+                if line_tokens[i][0] == ";" and i - 1 >= 0:
+                    end_tok = line_tokens[i - 1]
+                    break
 
-    # Check step (optional)
+            if not start_tok:
+                start_tok = find_token_on_line(tokens, line_num)
+            if not end_tok:
+                end_tok = start_tok
+
+            token = ("[for-test-expr]", line_num, start_tok[2], end_tok[3], None, None)
+            errors.append(semantic_error(tokens, token, "Test expression must have boolean type", underline=True))
+
     if "step" in for_stmt and for_stmt["step"] is not None:
         check_statement(for_stmt["step"], tokens, scope_name)
 
-    # Check loop body
     check_statement(for_stmt["body"], tokens, scope_name)
+    inside_loop -= 1
 
-    inside_loop -= 1  # Exit loop context
 
 def check_while_statement(while_stmt, tokens, scope_name):
     global inside_loop
-    inside_loop += 1  # Entering loop
+    inside_loop += 1
 
-    # Check test expression
     if "test" in while_stmt:
-        test_type = get_expression_type(while_stmt["test"], tokens, scope_name)
+        test_expr = while_stmt["test"]
+        test_type = get_expression_type(test_expr, tokens, scope_name)
         if test_type != "bool" and test_type != "error":
-            line_num = while_stmt["line_num"]
-            token = find_token_on_line(tokens, line_num)
+            line_num = test_expr.get("line_num", while_stmt["line_num"])
+            line_tokens = [tok for tok in tokens if tok[1] == line_num]
+            start_tok = None
+            end_tok = None
+
+            for i, tok in enumerate(line_tokens):
+                if tok[0] == "(" and i + 1 < len(line_tokens):
+                    start_tok = line_tokens[i + 1]
+                    break
+
+            for i in range(len(line_tokens) - 1, -1, -1):
+                if line_tokens[i][0] == ")" and i - 1 >= 0:
+                    end_tok = line_tokens[i - 1]
+                    break
+
+            if not start_tok:
+                start_tok = find_token_on_line(tokens, line_num)
+            if not end_tok:
+                end_tok = start_tok
+
+            token = ("[while-test-expr]", line_num, start_tok[2], end_tok[3], None, None)
             errors.append(semantic_error(tokens, token, "Test expression must have boolean type", underline=True))
 
-    # Check loop body
     check_statement(while_stmt["body"], tokens, scope_name)
+    inside_loop -= 1
 
-    inside_loop -= 1  # Exiting loop
 
 def check_break_statement(break_stmt, tokens):
     """

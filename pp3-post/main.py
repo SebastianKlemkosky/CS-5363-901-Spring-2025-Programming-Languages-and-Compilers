@@ -9,7 +9,7 @@ import pprint
 
 
 def main():
-    file_path = r"pp3-post\samples\bad4.decaf"
+    file_path = r"pp3-post\samples\bad6.decaf"
     output_path = "output.txt"  # 📝 Output will be saved here
 
     source_code = read_source_file(file_path)
