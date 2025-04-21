@@ -148,7 +148,6 @@ def check_function_call(call_node, tokens, scope_name):
                     token = find_token_on_line(tokens, line, match_text=match_text)
                 elif "FieldAccess" in actual_expr:
                     match_text = actual_expr["FieldAccess"]["identifier"]
-                    print(f"🔍 Trying to match FIELD: {match_text} on line {line}")
                     token = find_token_on_line(tokens, line, match_text=match_text)
                 else:
                     print(f"⚠️ No specific match found, falling back to line {line}")
@@ -183,7 +182,7 @@ def check_function_call(call_node, tokens, scope_name):
     if expected_count != actual_count:
         token = find_token_on_line(tokens, line_num, match_text=fn_name)
         errors.append(semantic_error(tokens, token,
-            f"Function '{fn_name}' expects {expected_count} arguments but {actual_count} given"))
+            f"Function '{fn_name}' expects {expected_count} arguments but {actual_count} given", True))
         return  # don't bother type checking if count is wrong
 
     # Check for argument type mismatches
