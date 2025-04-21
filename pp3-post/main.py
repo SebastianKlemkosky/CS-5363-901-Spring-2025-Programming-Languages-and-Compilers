@@ -8,7 +8,6 @@ import sys
 from contextlib import redirect_stdout
 import pprint
 
-
 def main():
     file_path = r"pp3-post\samples\t1.decaf"
     output_path = "output.txt"  
