@@ -9,26 +9,24 @@ import pprint
 
 
 def main():
-    file_path = r"pp3-post\samples\bad6.decaf"
-    output_path = "output.txt"  # 📝 Output will be saved here
+    file_path = r"pp3-post\samples\t4.decaf"
+    output_path = "output.txt"  
 
     source_code = read_source_file(file_path)
     tokens = tokenize(source_code)
-    #print(tokens)
+    
     ast_output = parse(tokens)
 
     if isinstance(ast_output, str):
         output = ast_output
     else:
         #pprint.pprint(ast_output)
-
         semantic_errors = check_semantics(ast_output, tokens)
 
         if semantic_errors:
             output =  "\n".join(semantic_errors) + "\n"
         else:
-            output = "No Errors"
-            #output = format_ast_string(ast_output)
+            output = format_ast_string(ast_output)
 
     print(output)
 

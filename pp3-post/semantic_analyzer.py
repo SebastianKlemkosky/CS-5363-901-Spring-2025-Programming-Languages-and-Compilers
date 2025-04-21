@@ -22,31 +22,93 @@ scope_names = []         # Optional: human-readable labels
 inside_loop = 0  # Used like a counter
 current_return_type = None
 
-
 def check_semantics(ast_root, tokens):
-    """
-    Entry point for semantic analysis.
-    Initializes scopes and checks semantic rules.
-    """
     global errors
     errors = []
+    initialize_scope_system()
 
-    initialize_scope_system()  
+    # First pass: declare all functions and global variables
+    for decl in ast_root["Program"]:
+        if "FnDecl" in decl:
+            fn_decl = decl["FnDecl"]
+            fn_name = fn_decl["identifier"]["Identifier"]["name"]
+            if is_declared_in_scope("global", fn_name):
+                token = find_token_on_line(tokens, fn_decl["line_num"], match_text=fn_name)
+                msg = f"Declared identifier '{fn_name}' more than once in same scope"
+                errors.append(semantic_error(tokens, token, msg, underline=True))
+            else:
+                declare("global", fn_name, fn_decl)
 
-    if "Program" in ast_root:
-        check_program(ast_root["Program"], tokens)
+        elif "VarDecl" in decl:
+            var_decl = decl["VarDecl"]
+            id_info = var_decl["identifier"]
+            if isinstance(id_info, dict) and "Identifier" in id_info:
+                var_name = id_info["Identifier"]["name"]
+            else:
+                var_name = id_info
+
+            if is_declared_in_scope("global", var_name):
+                token = find_token_on_line(tokens, var_decl["line_num"], match_text=var_name)
+                msg = f"Declared identifier '{var_name}' more than once in same scope"
+                errors.append(semantic_error(tokens, token, msg, underline=True))
+            else:
+                declare("global", var_name, var_decl)
+
+    # Second pass: fully analyze functions
+    for decl in ast_root["Program"]:
+        if "FnDecl" in decl:
+            check_function_declaration(decl["FnDecl"], tokens)
 
     return errors
+
 
 def check_program(declarations, tokens):
     """
     Processes top-level declarations (global variables and functions).
+    Now supports two-pass processing:
+    - Pass 1: Declare all global variables and functions
+    - Pass 2: Check contents of functions and variable types
     """
+    print("[check_program] 🚀 Starting two-pass declaration processing")
+
+    # Pass 1: Declare global variables and functions
+    for decl in declarations:
+        if "VarDecl" in decl:
+            var_decl = decl["VarDecl"]
+            id_info = var_decl["identifier"]
+            # Handle both top-level VarDecls and formals
+            if isinstance(id_info, dict) and "Identifier" in id_info:
+                var_name = id_info["Identifier"]["name"]
+            else:
+                var_name = id_info
+
+            print(f"[check_program] 🧾 Declaring global variable: {var_name}")
+
+            if is_declared_in_scope("global", var_name):
+                token = find_token_on_line(tokens, var_decl["line_num"], match_text=var_name)
+                msg = f"*** Declared identifier '{var_name}' more than once in same scope"
+                errors.append(semantic_error(tokens, token, msg))
+            else:
+                declare("global", var_name, var_decl)
+
+        elif "FnDecl" in decl:
+            fn_name = decl["FnDecl"]["identifier"]["Identifier"]["name"]
+            print(f"[check_program] 🧾 Declaring global function: {fn_name}")
+            if is_declared_in_scope("global", fn_name):
+                token = find_token_on_line(tokens, decl["FnDecl"]["line_num"], match_text=fn_name)
+                msg = f"*** Declared identifier '{fn_name}' more than once in same scope"
+                errors.append(semantic_error(tokens, token, msg))
+            else:
+                declare("global", fn_name, decl["FnDecl"])
+
+    # Pass 2: Perform full semantic checks
+    print("[check_program] 🔍 Starting semantic analysis on declarations")
     for decl in declarations:
         if "VarDecl" in decl:
             check_variable_declaration(decl["VarDecl"], tokens, "global")
         elif "FnDecl" in decl:
             check_function_declaration(decl["FnDecl"], tokens)
+
 
 def check_variable_declaration(vardecl, tokens, scope_name):
     """
@@ -78,16 +140,6 @@ def check_function_declaration(fndecl, tokens):
     """
     fn_name = fndecl["identifier"]["Identifier"]["name"]
     line_num = fndecl["line_num"]
-
-    # Check for duplicate in global scope
-    if is_declared_in_scope("global", fn_name):
-        token = find_token_on_line(tokens, line_num, match_text=fn_name)
-        msg = f"*** Declared identifier '{fn_name}' more than once in same scope"
-        errors.append(semantic_error(tokens, token, msg))
-        return
-
-    # Declare function in global scope
-    declare("global", fn_name, fndecl)
 
     # Enter parameter scope
     param_scope = push_scope(f"params:{fn_name}")
@@ -313,18 +365,17 @@ def get_expression_type(expr, tokens, scope_name):
         if decl is None:
             line_num = expr["FieldAccess"]["line_num"]
             token = find_token_on_line(tokens, line_num, match_text=var_name)
-            errors.append(semantic_error(tokens, token, f"No declaration for Variable '{var_name}' found"))
+            errors.append(semantic_error(tokens, token, f"No declaration for Variable '{var_name}' found", underline=True))
             return "error"
 
-        # ✅ New check: using a function as a variable
+        # If it's a function declaration, accessing it like a variable is invalid
         if isinstance(decl, dict) and "formals" in decl:
             line_num = expr["FieldAccess"]["line_num"]
             token = find_token_on_line(tokens, line_num, match_text=var_name)
-            errors.append(semantic_error(tokens, token, f"No declaration found for variable '{var_name}'", True))
+            errors.append(semantic_error(tokens, token, f"No declaration found for variable '{var_name}'", underline=True))
             return "error"
 
         return get_declared_type(decl)
-
 
     # ArithmeticExpr (wrapped or bare)
     if "ArithmeticExpr" in expr:
@@ -560,7 +611,6 @@ def check_for_statement(for_stmt, tokens, scope_name):
     check_statement(for_stmt["body"], tokens, scope_name)
     inside_loop -= 1
 
-
 def check_while_statement(while_stmt, tokens, scope_name):
     global inside_loop
     inside_loop += 1
@@ -594,7 +644,6 @@ def check_while_statement(while_stmt, tokens, scope_name):
 
     check_statement(while_stmt["body"], tokens, scope_name)
     inside_loop -= 1
-
 
 def check_break_statement(break_stmt, tokens):
     """
