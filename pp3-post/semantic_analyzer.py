@@ -122,16 +122,51 @@ def check_function_call(call_node, tokens, scope_name):
     if fn_name == "Print":
         for i, actual_expr in enumerate(actuals, start=1):
             actual_type = get_expression_type(actual_expr, tokens, scope_name)
+            print(f"🔍 PRINT arg {i}: {actual_expr} → type={actual_type}")
 
             if actual_type not in ("int", "bool", "string") and actual_type != "error":
-                token = find_token_on_line(tokens, actual_expr.get("line_num", line_num))
+                line = actual_expr.get("line_num", line_num)
+                token = None
+                match_text = None
+
+                # Try to locate the actual constant or identifier token
+                if "DoubleConstant" in actual_expr:
+                    match_text = str(actual_expr["DoubleConstant"]["value"])
+                    print(f"🔍 Trying to match DOUBLE: {match_text} on line {line}")
+                    token = find_token_on_line(tokens, line, match_text=match_text)
+                elif "IntConstant" in actual_expr:
+                    match_text = actual_expr["IntConstant"]["value"]
+                    print(f"🔍 Trying to match INT: {match_text} on line {line}")
+                    token = find_token_on_line(tokens, line, match_text=match_text)
+                elif "BoolConstant" in actual_expr:
+                    match_text = actual_expr["BoolConstant"]["value"]
+                    print(f"🔍 Trying to match BOOL: {match_text} on line {line}")
+                    token = find_token_on_line(tokens, line, match_text=match_text)
+                elif "StringConstant" in actual_expr:
+                    match_text = actual_expr["StringConstant"]["value"]
+                    print(f"🔍 Trying to match STRING: {match_text} on line {line}")
+                    token = find_token_on_line(tokens, line, match_text=match_text)
+                elif "FieldAccess" in actual_expr:
+                    match_text = actual_expr["FieldAccess"]["identifier"]
+                    print(f"🔍 Trying to match FIELD: {match_text} on line {line}")
+                    token = find_token_on_line(tokens, line, match_text=match_text)
+                else:
+                    print(f"⚠️ No specific match found, falling back to line {line}")
+                    token = find_token_on_line(tokens, line)
+
+                if token:
+                    print(f"✅ Found token for arg {i}: {token}")
+                else:
+                    print(f"❌ Could not find token for arg {i}, using fallback token")
+
+                # Now emit the semantic error under the actual argument
                 errors.append(semantic_error(
                     tokens,
                     token,
                     f"Incompatible argument {i}: {actual_type} given, int/bool/string expected",
                     underline=True
                 ))
-        return  # No further checks needed for Print
+
 
 
     # Check that the symbol is actually a function
@@ -223,8 +258,8 @@ def check_statement(stmt, tokens, scope_name):
         check_while_statement(stmt["WhileStmt"], tokens, scope_name)
       
     elif "PrintStmt" in stmt:
+        #print("📣 Entered PrintStmt block in check_statement()")
         check_print_statement(stmt["PrintStmt"], tokens, scope_name)
-        pass
 
     elif "Call" in stmt:
         check_function_call(stmt["Call"], tokens, scope_name)
@@ -247,7 +282,6 @@ def check_statement(stmt, tokens, scope_name):
     elif "Call" in stmt:
         get_expression_type(stmt["Call"], tokens, scope_name)
 
-
 def get_expression_type(expr, tokens, scope_name):
     """
     Determines the type of an expression.
@@ -267,12 +301,22 @@ def get_expression_type(expr, tokens, scope_name):
     if "FieldAccess" in expr:
         var_name = expr["FieldAccess"]["identifier"]
         decl = lookup(var_name)
+
         if decl is None:
             line_num = expr["FieldAccess"]["line_num"]
             token = find_token_on_line(tokens, line_num, match_text=var_name)
             errors.append(semantic_error(tokens, token, f"No declaration for Variable '{var_name}' found"))
             return "error"
+
+        # ✅ New check: using a function as a variable
+        if isinstance(decl, dict) and "formals" in decl:
+            line_num = expr["FieldAccess"]["line_num"]
+            token = find_token_on_line(tokens, line_num, match_text=var_name)
+            errors.append(semantic_error(tokens, token, f"No declaration found for variable '{var_name}'", True))
+            return "error"
+
         return get_declared_type(decl)
+
 
     # ArithmeticExpr (wrapped or bare)
     if "ArithmeticExpr" in expr:
@@ -525,7 +569,55 @@ def check_print_statement(print_stmt, tokens, scope_name):
         actual_type = get_expression_type(expr, tokens, scope_name)
 
         if actual_type not in ("int", "bool", "string") and actual_type != "error":
-            token = find_token_on_line(tokens, expr.get("line_num", line_num))
+            line = expr.get("line_num", line_num)
+            token = None
+
+            if "DoubleConstant" in expr:
+                match_text = expr["DoubleConstant"]["value"]
+                token = find_token_on_line(tokens, line, match_text=match_text)
+            elif "IntConstant" in expr:
+                match_text = expr["IntConstant"]["value"]
+                token = find_token_on_line(tokens, line, match_text=match_text)
+            elif "BoolConstant" in expr:
+                match_text = expr["BoolConstant"]["value"]
+                token = find_token_on_line(tokens, line, match_text=match_text)
+            elif "StringConstant" in expr:
+                match_text = expr["StringConstant"]["value"]
+                token = find_token_on_line(tokens, line, match_text=match_text)
+            elif "FieldAccess" in expr:
+                match_text = expr["FieldAccess"]["identifier"]
+                token = find_token_on_line(tokens, line, match_text=match_text)
+            elif "Call" in expr:
+                match_text = expr["Call"]["identifier"]
+                line = expr["Call"]["line_num"]
+
+                # Find start token
+                start_tok = find_token_on_line(tokens, line, match_text=match_text)
+
+                # Find all tokens on that line
+                line_tokens = [tok for tok in tokens if tok[1] == line]
+
+                # Try to find RPAREN
+                end_tok = None
+                for tok in line_tokens:
+                    if tok[0] == ")":
+                        end_tok = tok
+                        break
+
+                if start_tok and end_tok:
+                    token = (
+                        "[CallExpr]",
+                        line,
+                        start_tok[2],
+                        end_tok[3],
+                        None,
+                        None
+                    )
+                else:
+                    token = start_tok or find_token_on_line(tokens, line, match_text=match_text)
+
+
+
             errors.append(semantic_error(
                 tokens,
                 token,
