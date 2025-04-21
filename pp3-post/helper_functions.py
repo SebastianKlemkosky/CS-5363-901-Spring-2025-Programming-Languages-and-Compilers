@@ -79,7 +79,6 @@ def syntax_error(tokens, index, msg="syntax error", line_num=None, token_overrid
     else:
         error_msg = f"*** Error at EOF\n*** {msg}"
 
-        # 🐛 Debug output
     return {"SyntaxError": error_msg}
 
 def find_syntax_error(node):

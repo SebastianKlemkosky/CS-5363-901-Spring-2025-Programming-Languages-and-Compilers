@@ -209,6 +209,24 @@ def check_function_call(call_node, tokens, scope_name):
                 token = find_token_on_line(tokens, line, match_text=actual_expr["DoubleConstant"]["value"])
             elif "FieldAccess" in actual_expr:
                 token = find_token_on_line(tokens, line, match_text=actual_expr["FieldAccess"]["identifier"])
+            elif "ArithmeticExpr" in actual_expr or ("operator" in actual_expr and "left" in actual_expr and "right" in actual_expr):
+                line = actual_expr.get("line_num", line_num)
+                line_tokens = [tok for tok in tokens if tok[1] == line]
+
+                # Use first numeric token as start, last numeric token as end
+                start_tok = None
+                end_tok = None
+                for tok in line_tokens:
+                    if tok[4] in ("T_IntConstant", "T_DoubleConstant") and start_tok is None:
+                        start_tok = tok
+                    if tok[4] in ("T_IntConstant", "T_DoubleConstant"):
+                        end_tok = tok
+
+                if start_tok and end_tok:
+                    token = ("[ArithmeticExpr]", line, start_tok[2], end_tok[3], None, None)
+                else:
+                    token = find_token_on_line(tokens, line)
+
             else:
                 token = find_token_on_line(tokens, line)
 
