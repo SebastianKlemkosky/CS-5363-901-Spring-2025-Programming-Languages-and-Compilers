@@ -61,7 +61,6 @@ def check_semantics(ast_root, tokens):
 
     return errors
 
-
 def check_program(declarations, tokens):
     """
     Processes top-level declarations (global variables and functions).
@@ -108,7 +107,6 @@ def check_program(declarations, tokens):
             check_variable_declaration(decl["VarDecl"], tokens, "global")
         elif "FnDecl" in decl:
             check_function_declaration(decl["FnDecl"], tokens)
-
 
 def check_variable_declaration(vardecl, tokens, scope_name):
     """

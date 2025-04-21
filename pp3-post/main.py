@@ -3,13 +3,14 @@ from parser import parse
 from helper_functions import read_source_file
 from semantic_analyzer import check_semantics
 from format_nodes import format_ast_string
+from code_generation import generate_code
 import sys
 from contextlib import redirect_stdout
 import pprint
 
 
 def main():
-    file_path = r"pp3-post\samples\t4.decaf"
+    file_path = r"pp3-post\samples\t1.decaf"
     output_path = "output.txt"  
 
     source_code = read_source_file(file_path)
@@ -26,8 +27,8 @@ def main():
         if semantic_errors:
             output =  "\n".join(semantic_errors) + "\n"
         else:
-            output = format_ast_string(ast_output)
-
+            output = generate_code(ast_output)
+                
     print(output)
 
     # 🔽 Write to output.txt
