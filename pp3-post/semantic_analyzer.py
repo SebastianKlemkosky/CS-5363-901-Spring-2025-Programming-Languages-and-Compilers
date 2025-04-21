@@ -15,7 +15,6 @@ from helper_functions import (
     get_token_range_between
 )
 
-DEBUG = False  # Set to True for debug prints
 errors = []  # Global list to accumulate semantic errors
 scope_stack = []         # List of dictionaries, one per scope level
 scope_names = []         # Optional: human-readable labels
@@ -499,8 +498,6 @@ def check_assign_expression(assign_node, tokens, scope_name):
 
     if "FieldAccess" in target:
         var_name = target["FieldAccess"]["identifier"]
-        if DEBUG:
-            print(f"Assigning to variable: {var_name}")
 
         var_info = lookup(var_name)
         if var_info is None:

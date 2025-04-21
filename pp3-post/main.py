@@ -35,6 +35,5 @@ def main():
     with open(output_path, "w") as f:
         f.write(output)
 
-
 if __name__ == "__main__":
     main()
