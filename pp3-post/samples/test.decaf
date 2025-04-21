@@ -1,16 +1,4 @@
-void main() {
-  // ArithmeticExpr - invalid
-  1.0 + true;
-
-  // LogicalExpr - invalid binary
-  true && 5;
-
-  // LogicalExpr - invalid unary
-  !2;
-
-  // EqualityExpr - mismatched types
-  "hello" == 3;
-
-  // RelationalExpr - type mismatch
-  false > 1;
+void main()
+{
+   if (ReadLine()) 1;
 }

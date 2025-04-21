@@ -162,6 +162,7 @@ def parse_statement_block(tokens, index, current_token):
     return {"StmtBlock": statements}, index, current_token
 
 def parse_statement(tokens, index, current_token):
+
     if not current_token or not current_token[0].strip():
         index, current_token = advance(tokens, index)
         return parse_statement(tokens, index, current_token)
@@ -191,6 +192,7 @@ def parse_statement(tokens, index, current_token):
         return parse_for_statement(tokens, index, current_token)
 
     if lookahead(current_token, "T_If"):
+
         return parse_if_statement(tokens, index, current_token)
 
     if lookahead(current_token, "T_Break"):
@@ -428,6 +430,7 @@ def parse_while_statement(tokens, index, current_token):
     return node, index, current_token
 
 def parse_if_statement(tokens, index, current_token):
+
     line_num = current_token[1]
     index, current_token = advance(tokens, index)  # consume 'if'
 
@@ -443,6 +446,7 @@ def parse_if_statement(tokens, index, current_token):
 
     start_index = index
     then_stmt, index, current_token = parse_statement(tokens, index, current_token)
+
     if index == start_index:
         return syntax_error(tokens, index, "syntax error"), index, current_token
 
@@ -564,6 +568,7 @@ def parse_expression(tokens, index, current_token):
     return parse_logical_expr(tokens, index, current_token)
 
 def parse_expression_statement(tokens, index, current_token):
+
     expr_node, index, current_token = parse_expression(tokens, index, current_token)
 
     if isinstance(expr_node, dict) and "SyntaxError" in expr_node:
@@ -705,6 +710,21 @@ def parse_expression_leaf(tokens, index, current_token):
         index, current_token = advance(tokens, index)
         node = {
             "ReadIntegerExpr": {
+                "line_num": line_num
+            }
+        }
+        return node, index, current_token
+    
+    if lookahead(current_token, "T_ReadLine"):
+        index, current_token = advance(tokens, index)
+        if not lookahead(current_token, "'('"):
+            return syntax_error(tokens, index, "syntax error"), index, current_token
+        index, current_token = advance(tokens, index)
+        if not lookahead(current_token, "')'"):
+            return syntax_error(tokens, index, "syntax error"), index, current_token
+        index, current_token = advance(tokens, index)
+        node = {
+            "ReadLine": {
                 "line_num": line_num
             }
         }

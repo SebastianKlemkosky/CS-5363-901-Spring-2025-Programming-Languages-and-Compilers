@@ -14,6 +14,7 @@ def main():
 
     source_code = read_source_file(file_path)
     tokens = tokenize(source_code)
+    #print(tokens)
     ast_output = parse(tokens)
 
     if isinstance(ast_output, str):
