@@ -1,67 +1,30 @@
-	# standard Decaf preamble 
-  .text
-  .align 2
-  .globl main
-main:
-	# BeginFunc <placeholder>
-	subu $sp, $sp, 8	# decrement sp to make space to save ra, fp
-	sw $fp, 8($sp)	# save fp
-	sw $ra, 4($sp)	# save ra
-	addiu $fp, $sp, 8	# set up new fp
-	subu $sp, $sp, 24	# space for locals/temps
-	# Declare local variable: c
-	# Declare local variable: s
-	# Assignment statement
-	.data
-_string7: .asciiz "hello"
-	.text
-	la $t2, _string7
-	sw $t2, -12($fp)
-	# Assignment statement
-	li $t2, 5
-	subu $sp, $sp, 4
-	sw $t2, 4($sp)
-	li $t2, 4
-	subu $sp, $sp, 4
-	sw $t2, 4($sp)
-	jal _test
-	move $t2, $v0
-	sw $t2, -8($fp)
-	add $sp, $sp, 8
-	lw $t2, -8($fp)
-	subu $sp, $sp, 4
-	sw $t2, 4($sp)
-	jal _PrintInt
-	add $sp, $sp, 4
-	lw $t2, -12($fp)
-	subu $sp, $sp, 4
-	sw $t2, 4($sp)
-	jal _PrintString
-	add $sp, $sp, 4
-	# EndFunc
-	move $sp, $fp	# pop callee frame off stack
-	lw $ra, -4($fp)	# restore saved ra
-	lw $fp, 0($fp)	# restore saved fp
-	jr $ra	# return from function
-_test:
-	# BeginFunc <placeholder>
-	subu $sp, $sp, 8	# decrement sp to make space to save ra, fp
-	sw $fp, 8($sp)	# save fp
-	sw $ra, 4($sp)	# save ra
-	addiu $fp, $sp, 8	# set up new fp
-	subu $sp, $sp, 24	# space for locals/temps
-	lw $t2, 4($fp)
-	move $t0, $t2
-	lw $t2, 8($fp)
-	move $t1, $t2
-	add $t2, $t0, $t1
-	move $v0, $t2
-	move $sp, $fp	# pop callee frame off stack
-	lw $ra, -4($fp)	# restore saved ra
-	lw $fp, 0($fp)	# restore saved fp
-	jr $ra	# return from function
-	# EndFunc
-	move $sp, $fp	# pop callee frame off stack
-	lw $ra, -4($fp)	# restore saved ra
-	lw $fp, 0($fp)	# restore saved fp
-	jr $ra	# return from function
+    # standard Decaf preamble 
+	  .text
+	  .align 2
+	  .globl main
+  main:
+  	# BeginFunc <placeholder>
+  	  subu $sp, $sp, 8  # decrement sp to make space to save ra, fp
+  	  sw $fp, 8($sp)    # save fp
+  	  sw $ra, 4($sp)    # save ra
+  	  addiu $fp, $sp, 8 # set up new fp
+  	  subu $sp, $sp, <placeholder> # decrement sp to make space for locals/temps
+  	# EndFunc
+  	# (below handles reaching end of fn body with no explicit return)
+  	  move $sp, $fp     # pop callee frame off stack
+  	  lw $ra, -4($fp)   # restore saved ra
+  	  lw $fp, 0($fp)    # restore saved fp
+  	  jr $ra        # return from function
+  _test:
+  	# BeginFunc <placeholder>
+  	  subu $sp, $sp, 8  # decrement sp to make space to save ra, fp
+  	  sw $fp, 8($sp)    # save fp
+  	  sw $ra, 4($sp)    # save ra
+  	  addiu $fp, $sp, 8 # set up new fp
+  	  subu $sp, $sp, <placeholder> # decrement sp to make space for locals/temps
+  	# EndFunc
+  	# (below handles reaching end of fn body with no explicit return)
+  	  move $sp, $fp     # pop callee frame off stack
+  	  lw $ra, -4($fp)   # restore saved ra
+  	  lw $fp, 0($fp)    # restore saved fp
+  	  jr $ra        # return from function

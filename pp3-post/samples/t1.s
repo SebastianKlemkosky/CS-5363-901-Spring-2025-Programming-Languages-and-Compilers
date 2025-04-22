@@ -4,7 +4,7 @@
 	  .globl main
   main:
 	# BeginFunc 24
-	  subu $sp, $sp, 8	# decrement sp to make space to save ra, fp
+	  subu $sp, $sp, 8  # decrement sp to make space to save ra, fp
 	  sw $fp, 8($sp)	# save fp
 	  sw $ra, 4($sp)	# save ra
 	  addiu $fp, $sp, 8	# set up new fp

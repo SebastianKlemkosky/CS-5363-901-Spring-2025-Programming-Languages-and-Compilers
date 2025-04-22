@@ -259,3 +259,6 @@ def get_declared_type(decl):
             return type_field
 
     return decl  # fallback, e.g. already a string like 'int'
+
+# Code Generation Helpers
+
