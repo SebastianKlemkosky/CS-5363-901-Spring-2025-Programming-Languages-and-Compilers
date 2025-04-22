@@ -20,7 +20,6 @@ def get_var_offset(name):
         next_offset -= 4
     return var_offset_map[name]
 
-
 def compute_stack_space():
     return 24
 
