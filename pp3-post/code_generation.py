@@ -3,6 +3,7 @@
 string_labels = {}
 string_count = 0
 tmp_count = -1
+tmp_index = 0  # global counter for all _tmpN
 
 def requires_temp(expr):
     return (
@@ -57,84 +58,167 @@ def generate_code(ast_root):
     return "\n".join(data_section + text_section)
 
 def emit_function(fn_decl):
+    global tmp_index, offset
+
     lines = []
     name = fn_decl["identifier"]["Identifier"]["name"]
-    label = name
+    label = name if name == "main" else f"_{name}"
     locals_map = {}
-    offset = -4  # Start after space reserved for saved ra
-
+    offset = -4  # reserve space above for saved ra/fp
 
     body_stmts = fn_decl["body"]["StmtBlock"]
-    assign_temps = {}  # maps stmt ID to (tmp_label, offset)
+    assign_temps = {}
 
-    # 1a. First pass: assign declared locals
-    for stmt in body_stmts:
-        if "VarDecl" in stmt:
-            var_name = stmt["VarDecl"]["identifier"]
+    frame_size = abs(offset)
+
+    # 3. Emit prologue
+    lines.extend(emit_prologue(label, frame_size))
+
+   
+
+    # 5. Emit epilogue
+    lines.extend(emit_epilogue())
+
+    return lines
+
+
+
+def emit_call_expression(target, value, locals_map):
+    global tmp_index, offset
+
+    lines = []
+    call = value["Call"]
+    fn_name = call["identifier"]
+    actuals = call.get("actuals", [])
+
+    # Evaluate args in source order (to get correct _tmpN labels)
+    tmp_args = []
+    for arg in actuals:
+        if "IntConstant" in arg:
+            const_val = arg["IntConstant"]["value"]
+
+            # Allocate a temp
             offset -= 4
-            locals_map[var_name] = offset
+            tmp_label = f"_tmp{tmp_index}"
+            tmp_index += 1
+            tmp_offset = offset
+            locals_map[tmp_label] = tmp_offset
 
-    # 1b. Then assign temporaries
-    tmp_index = 0
-    for stmt in body_stmts:
-        if "AssignExpr" in stmt:
-            value = stmt["AssignExpr"]["value"]
-            if requires_temp(value):
-                offset -= 4
-                tmp_label = f"_tmp{tmp_index}"
-                tmp_index += 1
-                assign_temps[id(stmt)] = (tmp_label, offset)
-                locals_map[tmp_label] = offset
+            lines.append(f"\t# {tmp_label} = {const_val}")
+            lines.append(f"\t  li $t2, {const_val}")
+            lines.append(f"\t  sw $t2, {tmp_offset}($fp)")
+            tmp_args.append((tmp_label, tmp_offset))
 
+    # Push params in reverse order (right-to-left)
+    for tmp_label, tmp_offset in reversed(tmp_args):
+        lines.append(f"\t# PushParam {tmp_label}")
+        lines.append(f"\t  subu $sp, $sp, 4")
+        lines.append(f"\t  lw $t0, {tmp_offset}($fp)")
+        lines.append(f"\t  sw $t0, 4($sp)")
 
-    frame_size = abs(offset) + 4  # Add space back for saved ra/fp area
+    # Call the function
+    offset -= 4
+    tmp_label = f"_tmp{tmp_index}"
+    tmp_index += 1
+    tmp_offset = offset
+    locals_map[tmp_label] = tmp_offset
 
-    # 2. Emit function prologue
-    lines.append(f"  {label}:")
-    lines.append(f"\t# BeginFunc {frame_size}")
-    lines.append("\t  subu $sp, $sp, 8\t# decrement sp to make space to save ra, fp")
-    lines.append("\t  sw $fp, 8($sp)\t# save fp")
-    lines.append("\t  sw $ra, 4($sp)\t# save ra")
-    lines.append("\t  addiu $fp, $sp, 8\t# set up new fp")
-    lines.append(f"\t  subu $sp, $sp, {frame_size}\t# decrement sp to make space for locals/temps")
+    lines.append(f"\t# {tmp_label} = LCall _{fn_name}")
+    lines.append(f"\t  jal _{fn_name}")
+    lines.append(f"\t  move $t2, $v0")
+    lines.append(f"\t  sw $t2, {tmp_offset}($fp)")
 
-    # 3. Emit assignment statements
-    for stmt in body_stmts:
-        if "AssignExpr" in stmt:
-            target = stmt["AssignExpr"]["target"]["FieldAccess"]["identifier"]
-            value = stmt["AssignExpr"]["value"]
+    # Pop parameters
+    if tmp_args:
+        total = 4 * len(tmp_args)
+        lines.append(f"\t# PopParams {total}")
+        lines.append(f"\t  add $sp, $sp, {total}")
 
-            if "StringConstant" in value:
-                raw_string = value["StringConstant"]["value"]
-                tmp_label, tmp_offset = assign_temps[id(stmt)]
+    # Assign to target
+    lines.append(f"\t# {target} = {tmp_label}")
+    lines.append(f"\t  lw $t2, {tmp_offset}($fp)")
+    lines.append(f"\t  sw $t2, {locals_map[target]}($fp)")
 
-                # Emit _tmpN = "hello"
-                lines.append(f"\t# {tmp_label} = {raw_string}")
-                lines.append(f"  \t  .data\t\t\t# create string constant marked with label")
+    return lines
 
-                if raw_string not in string_labels:
-                    str_label = new_string_label()
-                    string_labels[raw_string] = str_label
-                    lines.append(f"  \t  {str_label}: .asciiz {raw_string}")
-                else:
-                    str_label = string_labels[raw_string]
+def emit_prologue(label, frame_size):
+    return [
+        f"  {label}:",
+        f"\t# BeginFunc {frame_size}",
+        "\t  subu $sp, $sp, 8\t# decrement sp to make space to save ra, fp",
+        "\t  sw $fp, 8($sp)\t# save fp",
+        "\t  sw $ra, 4($sp)\t# save ra",
+        "\t  addiu $fp, $sp, 8\t# set up new fp",
+        f"\t  subu $sp, $sp, {frame_size}\t# decrement sp to make space for locals/temps"
+    ]
 
-                lines.append(f"\t  .text")
-                lines.append(f"\t  la $t2, {str_label}\t# load label")
-                lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_label} from $t2 to $fp{tmp_offset}")
+def emit_epilogue():
+    return [
+        "\t# EndFunc",
+        "\t# (below handles reaching end of fn body with no explicit return)",
+        "\t  move $sp, $fp\t# pop callee frame off stack",
+        "\t  lw $ra, -4($fp)\t# restore saved ra",
+        "\t  lw $fp, 0($fp)\t# restore saved fp",
+        "\t  jr $ra\t\t# return from function"
+    ]
 
-                # Emit s = _tmpN
-                lines.append(f"\t# {target} = {tmp_label}")
-                lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_label} to $t2 from $fp{tmp_offset}")
-                lines.append(f"\t  sw $t2, {locals_map[target]}($fp)\t# spill {target} from $t2 to $fp{locals_map[target]}")
+def emit_string_assign(target, value, tmp_label, tmp_offset, locals_map):
+    lines = []
+    raw_string = value["StringConstant"]["value"]
+    lines.append(f"\t# {tmp_label} = {raw_string}")
+    lines.append(f"  \t  .data\t\t\t# create string constant marked with label")
+    if raw_string not in string_labels:
+        str_label = new_string_label()
+        string_labels[raw_string] = str_label
+        lines.append(f"  \t  {str_label}: .asciiz {raw_string}")
+    else:
+        str_label = string_labels[raw_string]
+    lines.append(f"\t  .text")
+    lines.append(f"\t  la $t2, {str_label}\t# load label")
+    lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_label} from $t2 to $fp{tmp_offset}")
+    lines.append(f"\t# {target} = {tmp_label}")
+    lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_label} to $t2 from $fp{tmp_offset}")
+    lines.append(f"\t  sw $t2, {locals_map[target]}($fp)\t# spill {target} from $t2 to $fp{locals_map[target]}")
+    return lines
 
-            elif "IntConstant" in value:
-                int_val = value["IntConstant"]["value"]
-                tmp_label, tmp_offset = assign_temps[id(stmt)]
+def emit_int_constant(int_val, tmp_label, tmp_offset):
+    return [
+        f"\t# {tmp_label} = {int_val}",
+        f"\t  li $t2, {int_val}\t\t# load constant value {int_val} into $t2",
+        f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_label} from $t2 to $fp{tmp_offset}"
+    ]
 
-                # Emit _tmpN = 4 or 5
-                lines.append(f"\t# {tmp_label} = {int_val}")
-                lines.append(f"\t  li $t2, {int_val}\t\t# load constant value {int_val} into $t2")
-                lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_label} from $t2 to $fp{tmp_offset}")
+def emit_return_arithmetic(expr, locals_map):
+    global tmp_index, offset
+    lines = []
+    left = expr["ArithmeticExpr"]["left"]
+    right = expr["ArithmeticExpr"]["right"]
+    op = expr["ArithmeticExpr"]["operator"]
 
+    offset -= 4
+    tmp_label = f"_tmp{tmp_index}"
+    tmp_index += 1
+    tmp_offset = offset
+    locals_map[tmp_label] = tmp_offset
+
+    left_id = left["FieldAccess"]["identifier"] if "FieldAccess" in left else "?"
+    right_id = right["FieldAccess"]["identifier"] if "FieldAccess" in right else "?"
+    lines.append(f"\t# {tmp_label} = {left_id} {op} {right_id}")
+
+    if "FieldAccess" in left:
+        param_offset = {"a": 4, "b": 8}.get(left_id)
+        if param_offset is not None:
+            lines.append(f"\t  lw $t0, {param_offset}($fp)\t# fill {left_id} to $t0")
+
+    if "FieldAccess" in right:
+        param_offset = {"a": 4, "b": 8}.get(right_id)
+        if param_offset is not None:
+            lines.append(f"\t  lw $t1, {param_offset}($fp)\t# fill {right_id} to $t1")
+
+    mips_op = {"+": "add", "-": "sub", "*": "mul", "/": "div"}.get(op, "add")
+    lines.append(f"\t  {mips_op} $t2, $t0, $t1")
+    lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_label}")
+    lines.append(f"\t# Return {tmp_label}")
+    lines.append(f"\t  lw $t2, {tmp_offset}($fp)")
+    lines.append(f"\t  move $v0, $t2")
     return lines

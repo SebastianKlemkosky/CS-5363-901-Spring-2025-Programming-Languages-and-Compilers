@@ -3,25 +3,28 @@
 	  .align 2
 	  .globl main
   main:
-	# BeginFunc 24
+	# BeginFunc 4
 	  subu $sp, $sp, 8	# decrement sp to make space to save ra, fp
 	  sw $fp, 8($sp)	# save fp
 	  sw $ra, 4($sp)	# save ra
 	  addiu $fp, $sp, 8	# set up new fp
-	  subu $sp, $sp, 24	# decrement sp to make space for locals/temps
-	# _tmp0 = "hello"
-  	  .data			# create string constant marked with label
-  	  _string1: .asciiz "hello"
-	  .text
-	  la $t2, _string1	# load label
-	  sw $t2, -16($fp)	# spill _tmp0 from $t2 to $fp-16
-	# s = _tmp0
-	  lw $t2, -16($fp)	# fill _tmp0 to $t2 from $fp-16
-	  sw $t2, -12($fp)	# spill s from $t2 to $fp-12
-  test:
-	# BeginFunc 8
+	  subu $sp, $sp, 4	# decrement sp to make space for locals/temps
+	# EndFunc
+	# (below handles reaching end of fn body with no explicit return)
+	  move $sp, $fp	# pop callee frame off stack
+	  lw $ra, -4($fp)	# restore saved ra
+	  lw $fp, 0($fp)	# restore saved fp
+	  jr $ra		# return from function
+  _test:
+	# BeginFunc 4
 	  subu $sp, $sp, 8	# decrement sp to make space to save ra, fp
 	  sw $fp, 8($sp)	# save fp
 	  sw $ra, 4($sp)	# save ra
 	  addiu $fp, $sp, 8	# set up new fp
-	  subu $sp, $sp, 8	# decrement sp to make space for locals/temps
+	  subu $sp, $sp, 4	# decrement sp to make space for locals/temps
+	# EndFunc
+	# (below handles reaching end of fn body with no explicit return)
+	  move $sp, $fp	# pop callee frame off stack
+	  lw $ra, -4($fp)	# restore saved ra
+	  lw $fp, 0($fp)	# restore saved fp
+	  jr $ra		# return from function
