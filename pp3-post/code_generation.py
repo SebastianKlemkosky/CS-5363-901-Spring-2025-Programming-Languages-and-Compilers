@@ -5,7 +5,6 @@ data_segment = []
 var_offset_map = {}
 next_offset = -4
 
-
 def get_var_offset(name):
     if name == "_tmp0":
         return -16
