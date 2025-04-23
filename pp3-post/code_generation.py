@@ -6,7 +6,6 @@ temporary_count = 0       # for generating _tmpN names
 string_labels = {}        # string → label (e.g., _string1)
 string_count = 0          # for unique string label IDs
 
-
 def generate_code(ast_root):
     global string_labels, string_count, label_count
     global offset_map, current_offset, temporary_count
