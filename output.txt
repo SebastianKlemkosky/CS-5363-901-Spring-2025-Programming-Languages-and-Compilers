@@ -10,7 +10,7 @@
 	  addiu $fp, $sp, 8 # set up new fp
 	  subu $sp, $sp, 32 # decrement sp to make space for locals/temps
 	# _tmp0 = "hello"
-	  .data             # create string constant marked with label
+	  .data		    # create string constant marked with label
 	  _string1: .asciiz "hello"
 	  .text
 	  la $t2, _string1	# load label
@@ -19,10 +19,10 @@
 	  lw $t2, -16($fp)	# fill _tmp0 to $t2 from $fp-16
 	  sw $t2, -12($fp)	# spill s from $t2 to $fp-12
 	# _tmp1 = 4
-	  li $t2, 4	# load constant value 4 into $t2
+	  li $t2, 4	    # load constant value 4 into $t2
 	  sw $t2, -20($fp)	# spill _tmp1 from $t2 to $fp-20
 	# _tmp2 = 5
-	  li $t2, 5	# load constant value 5 into $t2
+	  li $t2, 5	    # load constant value 5 into $t2
 	  sw $t2, -24($fp)	# spill _tmp2 from $t2 to $fp-24
 	# PushParam _tmp2
 	  subu $sp, $sp, 4	# decrement sp to make space for param
@@ -33,8 +33,8 @@
 	  lw $t0, -20($fp)	# fill _tmp1 to $t0 from $fp-20
 	  sw $t0, 4($sp)	# copy param value to stack
 	# _tmp3 = LCall _test
-	  jal _test	# jump to function
-	  move $t2, $v0	# copy function return value from $v0
+	  jal _test			    # jump to function
+	  move $t2, $v0	    # copy function return value from $v0
 	  sw $t2, -28($fp)	# spill _tmp3 from $t2 to $fp-28
 	# PopParams 8
 	  add $sp, $sp, 8	# pop params off stack
@@ -46,17 +46,17 @@
 	  lw $t0, -8($fp)	# fill c to $t0 from $fp-8
 	  sw $t0, 4($sp)	# copy param value to stack
 	# LCall _PrintInt
-	  jal _PrintInt	# jump to function
+	  jal _PrintInt		# jump to function
 	# PopParams 4
-	  add $sp, $sp, 4	# pop param
+	  add $sp, $sp, 4	# pop params off stack
 	# PushParam s
 	  subu $sp, $sp, 4	# decrement sp to make space for param
 	  lw $t0, -12($fp)	# fill s to $t0 from $fp-12
 	  sw $t0, 4($sp)	# copy param value to stack
 	# LCall _PrintString
-	  jal _PrintString	# jump to function
+	  jal _PrintString		# jump to function
 	# PopParams 4
-	  add $sp, $sp, 4	# pop param
+	  add $sp, $sp, 4	# pop params off stack
     # EndFunc
     # (below handles reaching end of fn body with no explicit return)
 	  move $sp, $fp     # pop callee frame off stack

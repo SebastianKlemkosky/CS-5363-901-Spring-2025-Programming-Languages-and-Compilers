@@ -182,7 +182,7 @@ def emit_assign_string_constant(assign_expr, context):
 
     # --- Step 3: Emit MIPS
     lines.append(f"\t# {tmp_name} = \"{string_val}\"")
-    lines.append(emit(".data", "create string constant marked with label"))
+    lines.append("\t  .data\t\t    # create string constant marked with label")
     lines.append(emit(f"{label}: .asciiz \"{string_val}\""))
     lines.append(emit(".text"))
     lines.append(f"\t  la $t2, {label}\t# load label")
@@ -216,7 +216,7 @@ def emit_assign_call(assign_expr, context):
 
             # Emit loading constant
             lines.append(f"\t# {tmp_name} = {value}")
-            lines.append(f"\t  li $t2, {value}\t# load constant value {value} into $t2")
+            lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
             lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{tmp_offset}")
 
             tmp_args.append((tmp_name, tmp_offset))
@@ -237,8 +237,8 @@ def emit_assign_call(assign_expr, context):
     context["offset"] -= 4
 
     lines.append(f"\t# {tmp_name} = LCall _{call['identifier']}")
-    lines.append(f"\t  jal _{call['identifier']}\t# jump to function")
-    lines.append(f"\t  move $t2, $v0\t# copy function return value from $v0")
+    lines.append(f"\t  jal _{call['identifier']}\t\t\t    # jump to function")
+    lines.append(f"\t  move $t2, $v0\t    # copy function return value from $v0")
     lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{tmp_offset}")
 
     # Step 4: Pop params
@@ -329,7 +329,7 @@ def emit_print_statement(print_stmt, context):
             lines.append(f"\t  sw $t0, 4($sp)\t# copy param value to stack")
 
             lines.append(f"\t# LCall {print_fn}")
-            lines.append(f"\t  jal {print_fn}\t# jump to function")
+            lines.append(f"\t  jal {print_fn}\t\t# jump to function")
 
             lines.append(f"\t# PopParams 4")
-            lines.append(f"\t  add $sp, $sp, 4\t# pop param")
+            lines.append(f"\t  add $sp, $sp, 4\t# pop params off stack")
