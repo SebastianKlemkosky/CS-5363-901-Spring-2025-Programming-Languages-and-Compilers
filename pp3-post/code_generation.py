@@ -23,7 +23,6 @@ def assign_stack_offsets(fn_decl):
 
     return var_locations, frame_size
 
-
 def emit(line, comment=None):
     """
     Formats a MIPS instruction line with optional comment.
@@ -85,7 +84,7 @@ def emit_epilogue():
     lines.append(emit("move $sp, $fp", "pop callee frame off stack"))
     lines.append(emit("lw $ra, -4($fp)", "restore saved ra"))
     lines.append(emit("lw $fp, 0($fp)", "restore saved fp"))
-    lines.append("\t  jr $ra          # return from function")
+    lines.append("\t  jr $ra        # return from function")
     return lines
 
 def emit_function(fn_decl, temp_counter):
@@ -263,12 +262,11 @@ def emit_return_statement(return_stmt, context):
         right = arith["right"]["FieldAccess"]["identifier"]
         op = arith["operator"]
 
-        # Assume left is a and right is b — both from params (fp + 4, fp + 8)
-        # You can generalize this later
-        a_offset = 4  # $fp + 4 = a
-        b_offset = 8  # $fp + 8 = b
+        # Assume a and b passed at +4 and +8
+        a_offset = 4
+        b_offset = 8
 
-        # Allocate temp
+        # Allocate _tmpN
         tmp_num = context["temp_counter"]
         tmp_name = f"_tmp{tmp_num}"
         context["temp_counter"] += 1
@@ -277,10 +275,10 @@ def emit_return_statement(return_stmt, context):
         context["temp_locations"][tmp_name] = tmp_offset
         context["offset"] -= 4
 
-        # Emit arithmetic
         lines.append(f"\t# {tmp_name} = {left} {op} {right}")
-        lines.append(f"\t  lw $t0, {a_offset}($fp)\t# fill {left} from $fp+{a_offset}")
-        lines.append(f"\t  lw $t1, {b_offset}($fp)\t# fill {right} from $fp+{b_offset}")
+        lines.append(f"\t  lw $t0, {a_offset}($fp)\t# fill {left} to $t0 from $fp+{a_offset}")
+        lines.append(f"\t  lw $t1, {b_offset}($fp)\t# fill {right} to $t1 from $fp+{b_offset}")
+
         if op == "+":
             lines.append(f"\t  add $t2, $t0, $t1")
         elif op == "-":
@@ -292,18 +290,17 @@ def emit_return_statement(return_stmt, context):
         else:
             lines.append(f"\t  # unsupported op: {op}")
 
-        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} to $fp{tmp_offset}")
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{tmp_offset}")
 
         lines.append(f"\t# Return {tmp_name}")
-        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name}")
-        lines.append(f"\t  move $v0, $t2\t# return value to $v0")
+        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{tmp_offset}")
+        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
 
-        # Inline return epilogue (same as EndFunc)
-        lines.append(f"\t  move $sp, $fp\t# pop callee frame off stack")
+        # Inline epilogue for explicit return
+        lines.append(f"\t  move $sp, $fp\t    # pop callee frame off stack")
         lines.append(f"\t  lw $ra, -4($fp)\t# restore saved ra")
         lines.append(f"\t  lw $fp, 0($fp)\t# restore saved fp")
-        lines.append(f"\t  jr $ra\t# return from function")
-
+        lines.append(f"\t  jr $ra\t    # return from function")
 
 def emit_print_statement(print_stmt, context):
     lines = context["lines"]
