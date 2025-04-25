@@ -83,12 +83,7 @@ def emit_function(fn_decl, temp_counter):
         for stmt in body["StmtBlock"]:
             emit_statement(stmt, context)
 
-    print(f"DEBUG: {fn_name} final offset: {context['offset']}")
-    print(f"DEBUG: {fn_name} temp_locations: {context['temp_locations']}")
-    print(f"DEBUG: {fn_name} var_locations: {context['var_locations']}")
-
     frame_size = ((abs(context["offset"] + 8) + 3) // 4) * 4
-    print(f"DEBUG: {fn_name} frame_size: {frame_size}")
 
     lines = []
     lines.extend(emit_prologue(fn_name, frame_size))
@@ -241,27 +236,45 @@ def emit_return_statement(return_stmt, context):
 
     if "ArithmeticExpr" in expr:
         arith = expr["ArithmeticExpr"]
-        left = arith["left"]["FieldAccess"]["identifier"]
-        right = arith["right"]["FieldAccess"]["identifier"]
+
+        # --- Handle left operand ---
+        left = arith["left"]
+        if "FieldAccess" in left:
+            left_name = left["FieldAccess"]["identifier"]
+            a_offset = context["var_locations"].get(left_name, 4)  # Default 4 if not found
+            lines.append(f"\t  lw $t0, {a_offset}($fp)\t# load {left_name}")
+        elif "IntConstant" in left:
+            left_val = int(left["IntConstant"]["value"])
+            lines.append(f"\t  li $t0, {left_val}\t# load const {left_val}")
+        else:
+            print(f"WARNING: Unhandled left expression: {left}")
+
+        # --- Handle right operand ---
+        right = arith["right"]
+        if "FieldAccess" in right:
+            right_name = right["FieldAccess"]["identifier"]
+            b_offset = context["var_locations"].get(right_name, 8)  # Default 8 if not found
+            lines.append(f"\t  lw $t1, {b_offset}($fp)\t# load {right_name}")
+        elif "IntConstant" in right:
+            right_val = int(right["IntConstant"]["value"])
+            lines.append(f"\t  li $t1, {right_val}\t# load const {right_val}")
+        elif "Call" in right:
+            call_node = right["Call"]
+            tmp_name = f"_tmp{context['temp_counter']}"
+            context["temp_counter"] += 1
+
+            tmp_offset = context["offset"]
+            context["temp_locations"][tmp_name] = tmp_offset
+            context["offset"] -= 4
+
+            emit_function_call(call_node, tmp_name, tmp_offset, context)
+
+            lines.append(f"\t  lw $t1, {tmp_offset}($fp)\t# load {tmp_name}")
+        else:
+            print(f"WARNING: Unhandled right expression: {right}")
+
+        # --- Perform the operation ---
         op = arith["operator"]
-
-        # Assume a and b passed at +4 and +8
-        a_offset = 4
-        b_offset = 8
-
-        # Allocate _tmpN
-        tmp_num = context["temp_counter"]
-        tmp_name = f"_tmp{tmp_num}"
-        context["temp_counter"] += 1
-
-        tmp_offset = context["offset"]
-        context["temp_locations"][tmp_name] = tmp_offset
-        context["offset"] -= 4
-
-        lines.append(f"\t# {tmp_name} = {left} {op} {right}")
-        lines.append(f"\t  lw $t0, {a_offset}($fp)\t# fill {left} to $t0 from $fp+{a_offset}")
-        lines.append(f"\t  lw $t1, {b_offset}($fp)\t# fill {right} to $t1 from $fp+{b_offset}")
-
         if op == "+":
             lines.append(f"\t  add $t2, $t0, $t1")
         elif op == "-":
@@ -273,17 +286,97 @@ def emit_return_statement(return_stmt, context):
         else:
             lines.append(f"\t  # unsupported op: {op}")
 
-        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{tmp_offset}")
+        # --- Allocate _tmpN for result ---
+        tmp_num = context["temp_counter"]
+        result_tmp = f"_tmp{tmp_num}"
+        context["temp_counter"] += 1
 
-        lines.append(f"\t# Return {tmp_name}")
-        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{tmp_offset}")
+        result_offset = context["offset"]
+        context["temp_locations"][result_tmp] = result_offset
+        context["offset"] -= 4
+
+        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp}")
+
+        # --- Return result ---
+        lines.append(f"\t# Return {result_tmp}")
+        lines.append(f"\t  lw $t2, {result_offset}($fp)\t# load {result_tmp}")
         lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
 
-        # Inline epilogue for explicit return
+        # --- Inline epilogue ---
         lines.append(f"\t  move $sp, $fp\t    # pop callee frame off stack")
         lines.append(f"\t  lw $ra, -4($fp)\t# restore saved ra")
         lines.append(f"\t  lw $fp, 0($fp)\t# restore saved fp")
         lines.append(f"\t  jr $ra\t    # return from function")
+
+def emit_function_call(call_node, tmp_name, tmp_offset, context):
+    lines = context["lines"]
+    func_name = call_node["identifier"]
+    args = call_node.get("actuals", [])
+
+    # --- Push parameters (reversed order) ---
+    for arg in reversed(args):
+        if "FieldAccess" in arg:
+            var = arg["FieldAccess"]["identifier"]
+            var_offset = context["var_locations"].get(var, -4)
+            lines.append(f"\t  subu $sp, $sp, 4")
+            lines.append(f"\t  lw $t0, {var_offset}($fp)\t# load {var}")
+            lines.append(f"\t  sw $t0, 4($sp)")
+        elif "IntConstant" in arg:
+            value = int(arg["IntConstant"]["value"])
+            lines.append(f"\t  subu $sp, $sp, 4")
+            lines.append(f"\t  li $t0, {value}\t# load const {value}")
+            lines.append(f"\t  sw $t0, 4($sp)")
+        elif "ArithmeticExpr" in arg:
+            # Handle n-1 inline
+            arith = arg["ArithmeticExpr"]
+            left = arith["left"]["FieldAccess"]["identifier"]
+            right_val = int(arith["right"]["IntConstant"]["value"])
+            op = arith["operator"]
+
+            left_offset = context["var_locations"].get(left, -4)
+
+            lines.append(f"\t  lw $t0, {left_offset}($fp)\t# load {left}")
+            lines.append(f"\t  li $t1, {right_val}\t# load {right_val}")
+
+            if op == "+":
+                lines.append(f"\t  add $t2, $t0, $t1")
+            elif op == "-":
+                lines.append(f"\t  sub $t2, $t0, $t1")
+            elif op == "*":
+                lines.append(f"\t  mul $t2, $t0, $t1")
+            elif op == "/":
+                lines.append(f"\t  div $t2, $t0, $t1")
+
+            # Spill temp
+            temp_num = context["temp_counter"]
+            temp_name = f"_tmp{temp_num}"
+            context["temp_counter"] += 1
+
+            temp_offset = context["offset"]
+            context["temp_locations"][temp_name] = temp_offset
+            context["offset"] -= 4
+
+            lines.append(f"\t  sw $t2, {temp_offset}($fp)\t# spill {temp_name}")
+
+            # Push temp
+            lines.append(f"\t  subu $sp, $sp, 4")
+            lines.append(f"\t  lw $t0, {temp_offset}($fp)\t# load {temp_name}")
+            lines.append(f"\t  sw $t0, 4($sp)")
+
+        else:
+            print(f"WARNING: Complex function call argument not handled: {arg}")
+
+    # --- Call function ---
+    lines.append(f"\t# LCall _{func_name}")
+    lines.append(f"\t  jal _{func_name}\t# jump to function")
+    lines.append(f"\t  move $t2, $v0\t# copy return value from $v0")
+
+    # --- Pop parameters ---
+    if args:
+        lines.append(f"\t  add $sp, $sp, {len(args) * 4}\t# pop params off stack")
+
+    # --- Spill result into given temp slot ---
+    lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# store result into {tmp_name}")
 
 def emit_print_statement(print_stmt, context):
     lines = context["lines"]
