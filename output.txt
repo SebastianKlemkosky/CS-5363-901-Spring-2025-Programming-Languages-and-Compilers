@@ -3,12 +3,12 @@
 	  .align 2
 	  .globl main
   main:
-    # BeginFunc 32
+    # BeginFunc 24
 	  subu $sp, $sp, 8  # decrement sp to make space to save ra, fp
 	  sw $fp, 8($sp)    # save fp
 	  sw $ra, 4($sp)    # save ra
 	  addiu $fp, $sp, 8 # set up new fp
-	  subu $sp, $sp, 32 # decrement sp to make space for locals/temps
+	  subu $sp, $sp, 24 # decrement sp to make space for locals/temps
 	# _tmp0 = "hello"
 	  .data		    # create string constant marked with label
 	  _string1: .asciiz "hello"
@@ -64,12 +64,12 @@
 	  lw $fp, 0($fp)    # restore saved fp
 	  jr $ra        # return from function
   _test:
-    # BeginFunc 24
+    # BeginFunc 4
 	  subu $sp, $sp, 8  # decrement sp to make space to save ra, fp
 	  sw $fp, 8($sp)    # save fp
 	  sw $ra, 4($sp)    # save ra
 	  addiu $fp, $sp, 8 # set up new fp
-	  subu $sp, $sp, 24 # decrement sp to make space for locals/temps
+	  subu $sp, $sp, 4  # decrement sp to make space for locals/temps
 	# _tmp4 = a + b
 	  lw $t0, 4($fp)	# fill a to $t0 from $fp+4
 	  lw $t1, 8($fp)	# fill b to $t1 from $fp+8

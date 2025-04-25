@@ -1,28 +1,5 @@
 # code_generation.py
 
-def assign_stack_offsets(fn_decl):
-    """
-    STUB: Dynamically assigns local variable offsets.
-    Later will also support temp allocation.
-    """
-    offset = -8  # below saved $ra and $fp
-    var_locations = {}
-
-    body = fn_decl.get("body", {})
-    if "StmtBlock" in body:
-        for stmt in body["StmtBlock"]:
-            if "VarDecl" in stmt:
-                name = stmt["VarDecl"]["identifier"]
-                var_locations[name] = offset
-                offset -= 4
-
-    # TEMPORARY: simulate 4 temps
-    offset -= 4 * 4
-
-    frame_size = ((abs(offset) + 3) // 4) * 4
-
-    return var_locations, frame_size
-
 def emit(line, comment=None):
     """
     Formats a MIPS instruction line with optional comment.
@@ -64,17 +41,18 @@ def generate_code(ast_root):
 
 def emit_prologue(fn_name, frame_size):
     lines = []
-    if fn_name == "main":
-        lines.append(f"  main:")
-    else:
-        lines.append(f"  _{fn_name}:")
+
+    label = f"  {fn_name}:" if fn_name == "main" else f"  _{fn_name}:"
+    lines.append(label)
 
     lines.append(emit_comment(f"  # BeginFunc {frame_size}"))
+
     lines.append(emit("subu $sp, $sp, 8", "decrement sp to make space to save ra, fp"))
     lines.append(emit("sw $fp, 8($sp)", "save fp"))
     lines.append(emit("sw $ra, 4($sp)", "save ra"))
     lines.append(emit("addiu $fp, $sp, 8", "set up new fp"))
     lines.append(emit(f"subu $sp, $sp, {frame_size}", "decrement sp to make space for locals/temps"))
+
     return lines
 
 def emit_epilogue():
@@ -105,7 +83,12 @@ def emit_function(fn_decl, temp_counter):
         for stmt in body["StmtBlock"]:
             emit_statement(stmt, context)
 
-    var_locations, frame_size = assign_stack_offsets(fn_decl)
+    print(f"DEBUG: {fn_name} final offset: {context['offset']}")
+    print(f"DEBUG: {fn_name} temp_locations: {context['temp_locations']}")
+    print(f"DEBUG: {fn_name} var_locations: {context['var_locations']}")
+
+    frame_size = ((abs(context["offset"] + 8) + 3) // 4) * 4
+    print(f"DEBUG: {fn_name} frame_size: {frame_size}")
 
     lines = []
     lines.extend(emit_prologue(fn_name, frame_size))
