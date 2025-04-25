@@ -12,7 +12,7 @@
 	# _tmp0 = "hello"
 	  .data		    # create string constant marked with label
 	  _string1: .asciiz "hello"
-	  .text
+	  .text6
 	  la $t2, _string1	# load label
 	  sw $t2, -16($fp)	# spill _tmp0 from $t2 to $fp-16
 	# s = _tmp0
