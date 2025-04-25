@@ -8,7 +8,6 @@ import sys
 from contextlib import redirect_stdout
 import pprint
 
-
 def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
     """
     Appends the Decaf runtime (defs.asm) to the compiled MIPS code
