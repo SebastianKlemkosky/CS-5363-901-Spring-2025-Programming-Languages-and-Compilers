@@ -1,5 +1,28 @@
 # code_generation.py
 
+def assign_stack_offsets(fn_decl):
+    """
+    STUB: Returns hardcoded frame sizes for now.
+    Will later compute variable stack offsets and temp space dynamically.
+
+    For now:
+    - main gets 24 bytes (2 locals + 4 temps)
+    - test gets 4 bytes (no locals, 1 temp for return)
+    """
+    fn_name = fn_decl["identifier"]["Identifier"]["name"]
+
+    if fn_name == "main":
+        frame_size = 24
+        var_locations = { "c": -8, "s": -12 }  # hardcoded stack slots
+    elif fn_name == "test":
+        frame_size = 4
+        var_locations = {}  # 'a' and 'b' are params (not stored here yet)
+    else:
+        frame_size = 0
+        var_locations = {}
+
+    return var_locations, frame_size
+
 def emit(line, comment=None):
     """
     Formats a MIPS instruction line with optional comment.
@@ -59,16 +82,79 @@ def emit_epilogue():
     return lines
 
 def emit_function(fn_decl):
-    lines = []
-
     fn_name = fn_decl["identifier"]["Identifier"]["name"]
 
-    # Use 24 for main, 0 for test for now
-    frame_size = 24 if fn_name == "main" else 0
+    # Context tracks everything during statement walking
+    context = {
+        "var_locations": {},      # { 'c': -8, 's': -12 }
+        "temp_locations": {},     # { '_tmp0': -16, '_tmp1': -20, ... }
+        "string_table": {},       # { 'hello': '_string1' }
+        "string_counter": 1,
+        "temp_counter": 0,
+        "offset": -8,             # start just below saved ra/fp
+        "lines": []               # final emitted lines
+    }
 
+    # Walk statements and emit lines into context["lines"]
+    body = fn_decl.get("body", {})
+    if "StmtBlock" in body:
+        for stmt in body["StmtBlock"]:
+            emit_statement(stmt, context)
+
+    # After all var/temp allocation, calculate final frame size
+    frame_size = ((abs(context["offset"]) + 3) // 4) * 4
+
+    # Emit final full function: prologue + body + epilogue
+    lines = []
     lines.extend(emit_prologue(fn_name, frame_size))
-    # (body goes here later)
+    lines.extend(context["lines"])
     lines.extend(emit_epilogue())
-
     return lines
 
+
+def emit_statement(stmt, context):
+    """
+    Given a statement node and context (which includes variable offsets, etc),
+    emit corresponding MIPS code.
+
+    context should be a dict like:
+    {
+        "var_locations": { "c": -8, "s": -12 },
+        "temp_locations": { "_tmp0": -16 },
+        "string_table": { "hello": "_string1" },
+        "string_counter": 1,
+        "lines": []  # accumulated MIPS output
+    }
+    """
+    if "VarDecl" in stmt:
+        # Handled elsewhere — offset assignment, no MIPS to emit here
+        pass
+
+    elif "AssignExpr" in stmt:
+        target = stmt["AssignExpr"]["target"]
+        value = stmt["AssignExpr"]["value"]
+
+        if "StringConstant" in value:
+            # TODO: implement string assignment handler
+            # emit_assign_string_constant(stmt["AssignExpr"], context)
+            pass
+
+        elif "Call" in value:
+            # TODO: implement function call assignment handler
+            # emit_assign_call(stmt["AssignExpr"], context)
+            pass
+
+        # TODO: future case: arithmetic assignments (e.g., x = a + b)
+
+    elif "PrintStmt" in stmt:
+        # TODO: implement printing of variables (e.g., Print(c), Print(s))
+        # emit_print_statement(stmt["PrintStmt"], context)
+        pass
+
+    elif "ReturnStmt" in stmt:
+        # TODO: implement returning from a function (e.g., return a + b)
+        # emit_return_statement(stmt["ReturnStmt"], context)
+        pass
+
+    else:
+        print(f"WARNING: Unhandled statement: {stmt}")
