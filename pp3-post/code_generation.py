@@ -123,26 +123,10 @@ def emit_function(fn_decl, temp_counter):
 def emit_statement(stmt, context):
   
     if "VarDecl" in stmt:
-        var_name = stmt["VarDecl"]["identifier"]
-        var_type = stmt["VarDecl"]["type"]
-
-        # Save variable location (for stack offset)
-        context["var_locations"][var_name] = context["offset"]
-
-        # Save variable type (for future things like print detection)
-        context.setdefault("var_types", {})[var_name] = var_type
-
-        context["offset"] -= 4  # Reserve space for local variable
+        emit_vardecl(stmt["VarDecl"], context)
 
     elif "AssignExpr" in stmt:
-        target = stmt["AssignExpr"]["target"]
-        value = stmt["AssignExpr"]["value"]
-
-        if "StringConstant" in value:
-            emit_assign_string_constant(stmt["AssignExpr"], context)
-        elif "Call" in value:
-            emit_assign_call(stmt["AssignExpr"], context)
-        # TODO: future case: arithmetic assignments (e.g., x = a + b)
+        emit_assign_expression(stmt["AssignExpr"], context)
 
     elif "PrintStmt" in stmt:
         emit_print_statement(stmt["PrintStmt"], context)
@@ -154,8 +138,7 @@ def emit_statement(stmt, context):
         emit_if_statement(stmt["IfStmt"], context)
 
     elif "ForStmt" in stmt:
-        # emit_for_statement(stmt["ForStmt"], context)
-        pass
+        emit_for_statement(stmt["ForStmt"], context)
 
     elif "WhileStmt" in stmt:
         # emit_while_statement(stmt["WhileStmt"], context)
@@ -171,6 +154,79 @@ def emit_statement(stmt, context):
 
     else:
         print(f"WARNING: Unhandled statement: {stmt}")
+
+def emit_vardecl(decl_node, context):
+
+    lines = context["lines"]
+    var_name = decl_node["identifier"]
+    var_type = decl_node["type"]
+
+    # Assume only 'int' type for now
+    if var_type == "int":
+        # Allocate 4 bytes
+        offset = context["offset"]
+        context["var_locations"][var_name] = offset
+        context["offset"] -= 4
+
+def emit_assign_expression(assign_node, context):
+    """
+    Emits code for an assignment expression (e.g., x = 5, x = y + 1, x = f(), x = a + b).
+    Handles IntConstant, StringConstant, Call, ArithmeticExpr.
+    """
+    lines = context["lines"]
+    target = assign_node["target"]["FieldAccess"]["identifier"]
+    value = assign_node["value"]
+
+    if "IntConstant" in value:
+        val = int(value["IntConstant"]["value"])
+        target_offset = context["var_locations"].get(target, -4)
+        lines.append(f"\t# {target} = {val}")
+        lines.append(f"\t  li $t2, {val}\t# load constant {val} into $t2")
+        lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
+
+    elif "StringConstant" in value:
+        emit_assign_string_constant(assign_node, context)
+
+    elif "Call" in value:
+        emit_assign_call(assign_node, context)
+
+    elif "ArithmeticExpr" in value:
+        arith = value["ArithmeticExpr"]
+        left = arith["left"]
+        right = arith["right"]
+        op = arith["operator"]
+
+        # --- Load left and right operands using helper ---
+        left_var, _ = emit_load_operand(left, "$t0", context, lines)
+        right_var, _ = emit_load_operand(right, "$t1", context, lines)
+
+        # --- Allocate a temp for the result ---
+        tmp_name, tmp_offset = allocate_temp(context)
+
+        lines.append(f"\t# {tmp_name} = {left_var} {op} {right_var}")
+
+        # --- Perform the operation ---
+        if op == "+":
+            lines.append(f"\t  add $t2, $t0, $t1")
+        elif op == "-":
+            lines.append(f"\t  sub $t2, $t0, $t1")
+        elif op == "*":
+            lines.append(f"\t  mul $t2, $t0, $t1")
+        elif op == "/":
+            lines.append(f"\t  div $t2, $t0, $t1")
+        else:
+            lines.append(f"\t  # unsupported operator {op}")
+
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+
+        # --- Finally, assign the temp into target variable ---
+        target_offset = context["var_locations"].get(target, -4)
+        lines.append(f"\t# {target} = {tmp_name}")
+        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
+        lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
+
+    else:
+        print(f"WARNING: Unhandled assignment value: {value}")
 
 def emit_assign_string_constant(assign_expr, context):
     lines = context["lines"]
@@ -662,17 +718,28 @@ def emit_relop(left_reg, right_reg, operator, target_reg, lines):
 def emit_load_operand(operand, dest_reg, context, lines):
     """
     Emits MIPS instructions to load an operand (FieldAccess, IntConstant, BoolConstant) into dest_reg.
+    Also returns (var_name, var_offset) if FieldAccess, otherwise (value, None).
     """
+
     if "FieldAccess" in operand:
         var_name = operand["FieldAccess"]["identifier"]
-        offset = context["var_locations"].get(var_name, -4)
-        lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# load {var_name}")
+        offset = context["var_locations"].get(var_name, 4)   # ✅ default positive 4
+        lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{format_offset(offset)}")
+        return var_name, offset
+
     elif "IntConstant" in operand:
         val = int(operand["IntConstant"]["value"])
-        lines.append(f"\t  li {dest_reg}, {val}\t# load int constant {val}")
+        lines.append(f"\t  li {dest_reg}, {val}\t# load int constant {val} into {dest_reg}")
+        return val, None
+
     elif "BoolConstant" in operand:
         val = 1 if operand["BoolConstant"]["value"] == "true" else 0
-        lines.append(f"\t  li {dest_reg}, {val}\t# load bool constant {val}")
+        lines.append(f"\t  li {dest_reg}, {val}\t# load bool constant {val} into {dest_reg}")
+        return val, None
+
     else:
         print(f"WARNING: Unsupported operand type in emit_load_operand: {operand}")
+        return None, None
 
+def emit_for_statement(for_node, context):
+    pass
