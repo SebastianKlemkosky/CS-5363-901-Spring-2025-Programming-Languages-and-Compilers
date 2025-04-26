@@ -261,4 +261,47 @@ def get_declared_type(decl):
     return decl  # fallback, e.g. already a string like 'int'
 
 # Code Generation Helpers
+def calculate_frame_size(offset):
+    """
+    Given final stack offset, calculate aligned frame size for MIPS.
+    Adjustment of +8 because initial offset was -8 for saved $fp/$ra.
+    """
+    adjusted_offset = abs(offset + 8)
+    frame_size = ((adjusted_offset + 3) // 4) * 4  # Round up to nearest 4
+    return frame_size
 
+def allocate_temp(context):
+    tmp_num = context["temp_counter"]
+    tmp_name = f"_tmp{tmp_num}"
+    context["temp_counter"] += 1
+
+    tmp_offset = context["offset"]
+    context["temp_locations"][tmp_name] = tmp_offset
+    context["offset"] -= 4
+
+    return tmp_name, tmp_offset
+
+def get_print_function_for_type(var_type):
+    """
+    Maps a Decaf type to the corresponding _Print* function.
+    """
+    type_map = {
+        "string": "_PrintString",
+        "int": "_PrintInt",
+        "bool": "_PrintBool",
+        "double": "_PrintDouble"
+    }
+    return type_map.get(var_type, "_PrintInt")  # fallback to _PrintInt
+
+def get_var_type(field_access, context):
+    """
+    Given a FieldAccess node and context, return the variable's declared type.
+    """
+    var_name = field_access["identifier"]
+    var_types = context.get("var_types", {})
+
+    var_type = var_types.get(var_name)
+    if var_type is None:
+        raise KeyError(f"Type for variable '{var_name}' not found in var_types")
+
+    return var_type

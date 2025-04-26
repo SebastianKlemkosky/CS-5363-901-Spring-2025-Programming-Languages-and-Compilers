@@ -46,7 +46,7 @@
 	  lw $t0, -8($fp)	# fill c to $t0 from $fp-8
 	  sw $t0, 4($sp)	# copy param value to stack
 	# LCall _PrintInt
-	  jal _PrintInt			# jump to function
+	  jal _PrintInt         # jump to function
 	# PopParams 4
 	  add $sp, $sp, 4	# pop params off stack
 	# PushParam s
@@ -54,7 +54,7 @@
 	  lw $t0, -12($fp)	# fill s to $t0 from $fp-12
 	  sw $t0, 4($sp)	# copy param value to stack
 	# LCall _PrintString
-	  jal _PrintString			# jump to function
+	  jal _PrintString      # jump to function
 	# PopParams 4
 	  add $sp, $sp, 4	# pop params off stack
     # EndFunc
