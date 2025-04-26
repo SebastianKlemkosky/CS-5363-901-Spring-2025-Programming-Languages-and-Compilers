@@ -242,6 +242,24 @@ def emit_return_statement(return_stmt, context):
     lines = context["lines"]
     expr = return_stmt["expr"]
 
+    # --- NEW CASE: Direct return of a constant (like return 1;) ---
+    if "IntConstant" in expr:
+        value = int(expr["IntConstant"]["value"])
+        tmp_name, tmp_offset = allocate_temp(context)
+
+        lines.append(f"\t# {tmp_name} = {value}")
+        lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+
+        lines.append(f"\t# Return {tmp_name}")
+        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
+        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
+
+        # Inline epilogue
+        lines.extend(emit_epilogue_lines(add_end_comment=False))
+        return
+
+    # --- Existing CASE: Return an ArithmeticExpr ---
     if "ArithmeticExpr" in expr:
         arith = expr["ArithmeticExpr"]
 
@@ -265,17 +283,17 @@ def emit_return_statement(return_stmt, context):
             b_offset = None
         elif "Call" in right:
             call_node = right["Call"]
-            tmp_name = f"_tmp{context['temp_counter']}"
+            tmp_name_call = f"_tmp{context['temp_counter']}"
             context["temp_counter"] += 1
 
-            tmp_offset = context["offset"]
-            context["temp_locations"][tmp_name] = tmp_offset
+            tmp_offset_call = context["offset"]
+            context["temp_locations"][tmp_name_call] = tmp_offset_call
             context["offset"] -= 4
 
-            emit_function_call(call_node, tmp_name, tmp_offset, context)
+            emit_function_call(call_node, tmp_name_call, tmp_offset_call, context)
 
-            right_var = tmp_name
-            b_offset = tmp_offset
+            right_var = tmp_name_call
+            b_offset = tmp_offset_call
         else:
             print(f"WARNING: Unhandled right expression: {right}")
             b_offset = None
@@ -316,7 +334,7 @@ def emit_return_statement(return_stmt, context):
         # --- Return result ---
         lines.append(f"\t# Return {result_tmp}")
         lines.append(f"\t  lw $t2, {result_offset}($fp)\t# fill {result_tmp} to $t2 from $fp{result_offset}")
-        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
+        lines.append(f"\t  move $v0, $t2\t      # assign return value into $v0")
 
         # --- Inline epilogue ---
         lines.extend(emit_epilogue_lines(add_end_comment=False))
@@ -578,8 +596,9 @@ def emit_if_statement(if_node, context):
 
     # --- 3. Conditional branch ---
     lines.append(f"\t# IfZ {tmp_cond} Goto {if_label}")
-    lines.append(f"\t  lw $t0, {context['temp_locations'][tmp_cond]}($fp)\t# fill {tmp_cond}")
-    lines.append(f"\t  beqz $t0, {if_label}")
+    tmp_offset = context["temp_locations"][tmp_cond]
+    lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(tmp_offset)}")
+    lines.append(f"\t  beqz $t0, {if_label}\t# branch if {tmp_cond} is zero")
 
     # --- 4. THEN block ---
     if then_stmt:
@@ -590,7 +609,7 @@ def emit_if_statement(if_node, context):
         lines.append(f"\t  j {end_label}")
 
     # --- 6. ELSE label ---
-    lines.append(f"{if_label}:")
+    lines.append(f"  {if_label}:")
     if else_stmt:
         emit_statement(else_stmt, context)
         lines.append(f"{end_label}:")
