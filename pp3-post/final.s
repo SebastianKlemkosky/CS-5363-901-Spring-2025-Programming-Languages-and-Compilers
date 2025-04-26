@@ -23,8 +23,8 @@
 	  seq $t2, $t0, $t1
 	  sw $t2, -16($fp)	# spill _tmp2 from $t2 to $fp-16
 	# _tmp3 = _tmp1 || _tmp2
-	  lw $t0, -12($fp)	# fill _tmp1
-	  lw $t1, -16($fp)	# fill _tmp2
+	  lw $t0, -12($fp)	# fill _tmp1 to $t0 from $fp-12
+	  lw $t1, -16($fp)	# fill _tmp2 to $t1 from $fp-16
 	  or $t2, $t0, $t1
 	  sw $t2, -20($fp)	# spill _tmp3 from $t2 to $fp-20
 	# IfZ _tmp3 Goto _L0

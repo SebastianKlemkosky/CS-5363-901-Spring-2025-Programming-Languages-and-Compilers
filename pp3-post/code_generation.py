@@ -553,13 +553,12 @@ def emit_relop_expression(expr, context):
         tmp_final_name, tmp_final_offset = allocate_temp(context)
 
         lines.append(f"\t# {tmp_final_name} = {tmp_name} || {tmp_eq_name}")
-        lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_name}")
-        lines.append(f"\t  lw $t1, {tmp_eq_offset}($fp)\t# fill {tmp_eq_name}")
+        lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_name} to $t0 from $fp{format_offset(tmp_offset)}")
+        lines.append(f"\t  lw $t1, {tmp_eq_offset}($fp)\t# fill {tmp_eq_name} to $t1 from $fp{format_offset(tmp_eq_offset)}")
         lines.append(f"\t  or $t2, $t0, $t1")
         lines.append(f"\t  sw $t2, {tmp_final_offset}($fp)\t# spill {tmp_final_name} from $t2 to $fp{format_offset(tmp_final_offset)}")
 
         return tmp_final_name
-
 
     return tmp_name
 
