@@ -79,19 +79,31 @@ def emit_function(fn_decl, temp_counter):
     # Create context for this function
     context = {
         "var_locations": {},
-        "var_types": {},           # Add this if you didn't already!
+        "var_types": {},
         "temp_locations": {},
         "constant_temps": set(),
         "string_table": {},
         "string_counter": 1,
         "temp_counter": temp_counter,
-        "offset": -8,
+        "offset": -8,  # locals grow downward
         "lines": [],
-        "if_counter": 0,            # <<< 🛠 ADD THIS
-        "loop_counter": 0           # <<< (for future while/for/break/continue)
+        "if_counter": 0,
+        "loop_counter": 0
     }
 
-    # Walk and emit all body statements
+    # --- Handle function parameters ---
+    formal_offset = 4
+    for formal in fn_decl.get("formals", []):
+        if "VarDecl" in formal:
+            formal_name = formal["VarDecl"]["identifier"]["Identifier"]["name"]
+            formal_type = formal["VarDecl"]["type"]["Type"]
+
+            context["var_locations"][formal_name] = formal_offset
+            context["var_types"][formal_name] = formal_type
+
+            formal_offset += 4  # next parameter at +4 bytes higher
+
+    # --- Walk and emit all body statements ---
     body = fn_decl.get("body", {})
     if "StmtBlock" in body:
         for stmt in body["StmtBlock"]:
@@ -109,6 +121,7 @@ def emit_function(fn_decl, temp_counter):
     return lines, context["temp_counter"]
 
 def emit_statement(stmt, context):
+  
     if "VarDecl" in stmt:
         var_name = stmt["VarDecl"]["identifier"]
         var_type = stmt["VarDecl"]["type"]
@@ -120,7 +133,6 @@ def emit_statement(stmt, context):
         context.setdefault("var_types", {})[var_name] = var_type
 
         context["offset"] -= 4  # Reserve space for local variable
-
 
     elif "AssignExpr" in stmt:
         target = stmt["AssignExpr"]["target"]
@@ -140,7 +152,6 @@ def emit_statement(stmt, context):
 
     elif "IfStmt" in stmt:
         emit_if_statement(stmt["IfStmt"], context)
-        pass
 
     elif "ForStmt" in stmt:
         # emit_for_statement(stmt["ForStmt"], context)
@@ -210,7 +221,7 @@ def emit_assign_call(assign_expr, context):
             lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
             lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{tmp_offset}")
 
-            context["constant_temps"].add(tmp_name)   # 👈 ADD THIS!
+            context["constant_temps"].add(tmp_name)
 
             tmp_args.append((tmp_name, tmp_offset))
 
@@ -246,6 +257,7 @@ def emit_return_statement(return_stmt, context):
     if "IntConstant" in expr:
         value = int(expr["IntConstant"]["value"])
         tmp_name, tmp_offset = allocate_temp(context)
+        #print(f"RETURN statement allocating: {tmp_name}")
 
         lines.append(f"\t# {tmp_name} = {value}")
         lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
@@ -283,14 +295,9 @@ def emit_return_statement(return_stmt, context):
             b_offset = None
         elif "Call" in right:
             call_node = right["Call"]
-            tmp_name_call = f"_tmp{context['temp_counter']}"
-            context["temp_counter"] += 1
-
-            tmp_offset_call = context["offset"]
-            context["temp_locations"][tmp_name_call] = tmp_offset_call
-            context["offset"] -= 4
-
-            emit_function_call(call_node, tmp_name_call, tmp_offset_call, context)
+            tmp_name_call, tmp_offset_call = allocate_temp(context)
+            
+            tmp_name_call, tmp_offset_call = emit_function_call(call_node, tmp_name_call, tmp_offset_call, context, False)
 
             right_var = tmp_name_call
             b_offset = tmp_offset_call
@@ -302,7 +309,7 @@ def emit_return_statement(return_stmt, context):
 
         # --- Allocate _tmpN for result ---
         result_tmp, result_offset = allocate_temp(context)
-
+        
         # --- Correct Order: first comment ---
         lines.append(f"\t# {result_tmp} = {left_var} {op} {right_var}")
 
@@ -334,12 +341,13 @@ def emit_return_statement(return_stmt, context):
         # --- Return result ---
         lines.append(f"\t# Return {result_tmp}")
         lines.append(f"\t  lw $t2, {result_offset}($fp)\t# fill {result_tmp} to $t2 from $fp{result_offset}")
-        lines.append(f"\t  move $v0, $t2\t      # assign return value into $v0")
+        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
 
         # --- Inline epilogue ---
         lines.extend(emit_epilogue_lines(add_end_comment=False))
 
-def emit_function_call(call_node, tmp_name, tmp_offset, context):
+def emit_function_call(call_node, tmp_name, tmp_offset, context ,allocate_inner_constants=True):
+    
     lines = context["lines"]
     func_name = call_node["identifier"]
     args = call_node.get("actuals", [])
@@ -358,9 +366,10 @@ def emit_function_call(call_node, tmp_name, tmp_offset, context):
 
             # Allocate a temp to hold the constant
             tmp_name_const, tmp_offset_const = allocate_temp(context)
+            print(f"[emit_function_call] Allocated constant temp: {tmp_name_const}")   # <-- 🧠 ADD THIS
 
-            context["constant_temps"].add(tmp_name_const)  # 🔥 ADD THIS
-
+            context["constant_temps"].add(tmp_name_const)
+            
             lines.append(f"\t# {tmp_name_const} = {value}")
             lines.append(f"\t  li $t2, {value}\t# load const {value}")
             lines.append(f"\t  sw $t2, {tmp_offset_const}($fp)\t# spill {tmp_name_const}")
@@ -388,12 +397,25 @@ def emit_function_call(call_node, tmp_name, tmp_offset, context):
 
             left_offset = context["var_locations"].get(left, -4)
 
-            # Allocate temp BEFORE emitting op
+            # 🔥 Allocate a temp for the constant (e.g., _tmp5 = 1)
+            if allocate_inner_constants:
+                tmp_right_name, tmp_right_offset = allocate_temp(context)
+            else:
+                tmp_right_name, tmp_right_offset = tmp_name, tmp_offset
+                
+            context["constant_temps"].add(tmp_right_name)
+
+            lines.append(f"\t# {tmp_right_name} = {right_val}")
+            lines.append(f"\t  li $t2, {right_val}\t    # load constant value {right_val} into $t2")
+            lines.append(f"\t  sw $t2, {tmp_right_offset}($fp)\t# spill {tmp_right_name} from $t2 to $fp{format_offset(tmp_right_offset)}")
+
+
+            # 🔥 Allocate a temp for the result of the operation (e.g., _tmp6 = n - _tmp5)
             temp_name, temp_offset = allocate_temp(context)
 
-            lines.append(f"\t# {temp_name} = {left} {op} {right_val}")
-            lines.append(f"\t  lw $t0, {left_offset}($fp)\t# load {left}")
-            lines.append(f"\t  li $t1, {right_val}\t# load {right_val}")
+            lines.append(f"\t# {temp_name} = {left} {op} {tmp_right_name}")
+            lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left} to $t0 from $fp{format_offset(left_offset)}")
+            lines.append(f"\t  lw $t1, {tmp_right_offset}($fp)\t# fill {tmp_right_name} to $t1 from $fp{format_offset(tmp_right_offset)}")
 
             if op == "+":
                 lines.append(f"\t  add $t2, $t0, $t1")
@@ -404,8 +426,9 @@ def emit_function_call(call_node, tmp_name, tmp_offset, context):
             elif op == "/":
                 lines.append(f"\t  div $t2, $t0, $t1")
 
-            lines.append(f"\t  sw $t2, {temp_offset}($fp)\t# spill {temp_name}")
+            lines.append(f"\t  sw $t2, {temp_offset}($fp)\t# spill {temp_name} from $t2 to $fp{format_offset(temp_offset)}")
 
+            # 🔥 Push this temp as param
             lines.append(f"\t# PushParam {temp_name}")
             emit_push_param(lines, temp_offset, temp_name)
 
@@ -413,16 +436,19 @@ def emit_function_call(call_node, tmp_name, tmp_offset, context):
             print(f"WARNING: Complex function call argument not handled: {arg}")
 
     # --- Call function ---
-    lines.append(f"\t# LCall _{func_name}")
-    lines.append(f"\t  jal _{func_name}\t     # jump to function")
-    lines.append(f"\t  move $t2, $v0\t# copy return value from $v0")
+    tmp_result_name, tmp_result_offset = allocate_temp(context)
+
+    lines.append(f"\t# {tmp_result_name} = LCall _{func_name}")
+    lines.append(f"\t  jal _{func_name}\t    # jump to function")
+    lines.append(f"\t  move $t2, $v0\t    # copy function return value from $v0")
+    lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} from $t2 to $fp{format_offset(tmp_result_offset)}")
 
     # --- Pop parameters ---
     if args:
+        lines.append(f"\t# PopParams {len(args) * 4}")
         lines.append(f"\t  add $sp, $sp, {len(args) * 4}\t# pop params off stack")
 
-    # --- Spill result into given temp slot ---
-    lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# store result into {tmp_name}")
+    return tmp_result_name, tmp_result_offset
 
 def emit_print_statement(print_stmt, context):
     lines = context["lines"]

@@ -279,6 +279,8 @@ def allocate_temp(context):
     context["temp_locations"][tmp_name] = tmp_offset
     context["offset"] -= 4
 
+    #print(f"ALLOCATE: {tmp_name}")   # ← 🧠 DEBUG PRINT HERE
+
     return tmp_name, tmp_offset
 
 def get_print_function_for_type(var_type):
