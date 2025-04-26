@@ -39,7 +39,7 @@ def main():
     if isinstance(ast_output, str):
         output = ast_output
     else:
-        #pprint.pprint(ast_output)
+        pprint.pprint(ast_output)
         semantic_errors = check_semantics(ast_output, tokens)
 
         if semantic_errors:
