@@ -305,3 +305,28 @@ def get_var_type(field_access, context):
         raise KeyError(f"Type for variable '{var_name}' not found in var_types")
 
     return var_type
+
+def format_relop_comment(tmp_name, left_var, operator, right_var):
+    """
+    Given tmp_name, left_var, operator, right_var,
+    returns a pretty string for relational operation comment.
+    """
+    # For display purposes, flip <= to < and >= to >
+    display_operator = operator
+    if operator == "<=":
+        display_operator = "<"
+    elif operator == ">=":
+        display_operator = ">"
+    
+    return f"\t# {tmp_name} = {left_var} {display_operator} {right_var}"
+
+def format_offset(offset):
+    """
+    Formats a stack offset for comments.
+    Always adds '+' sign if positive, leaves '-' alone.
+    """
+    if offset >= 0:
+        return f"+{offset}"
+    else:
+        return str(offset)
+

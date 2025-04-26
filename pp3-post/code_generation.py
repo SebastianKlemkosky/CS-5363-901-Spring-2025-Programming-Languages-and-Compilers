@@ -1,5 +1,5 @@
 # code_generation.py
-from helper_functions import calculate_frame_size, allocate_temp, get_print_function_for_type, get_var_type
+from helper_functions import calculate_frame_size, allocate_temp, get_print_function_for_type, get_var_type, format_relop_comment, format_offset
 
 def generate_code(ast_root):
     lines = []
@@ -40,10 +40,7 @@ def emit_prologue(fn_name, frame_size):
     lines.append(f"\t  sw $fp, 8($sp)    # save fp")
     lines.append(f"\t  sw $ra, 4($sp)    # save ra")
     lines.append(f"\t  addiu $fp, $sp, 8 # set up new fp")
-    if fn_name == "main":
-        lines.append(f"\t  subu $sp, $sp, {frame_size} # decrement sp to make space for locals/temps")
-    else:
-        lines.append(f"\t  subu $sp, $sp, {frame_size}  # decrement sp to make space for locals/temps")
+    lines.append(f"\t  subu $sp, $sp, {frame_size} # decrement sp to make space for locals/temps")
 
     return lines
 
@@ -82,12 +79,16 @@ def emit_function(fn_decl, temp_counter):
     # Create context for this function
     context = {
         "var_locations": {},
+        "var_types": {},           # Add this if you didn't already!
         "temp_locations": {},
+        "constant_temps": set(),
         "string_table": {},
         "string_counter": 1,
         "temp_counter": temp_counter,
-        "offset": -8,  # Start below saved $ra and $fp
-        "lines": []
+        "offset": -8,
+        "lines": [],
+        "if_counter": 0,            # <<< 🛠 ADD THIS
+        "loop_counter": 0           # <<< (for future while/for/break/continue)
     }
 
     # Walk and emit all body statements
@@ -138,7 +139,7 @@ def emit_statement(stmt, context):
         emit_return_statement(stmt["ReturnStmt"], context)
 
     elif "IfStmt" in stmt:
-        # emit_if_statement(stmt["IfStmt"], context)
+        emit_if_statement(stmt["IfStmt"], context)
         pass
 
     elif "ForStmt" in stmt:
@@ -208,6 +209,8 @@ def emit_assign_call(assign_expr, context):
             lines.append(f"\t# {tmp_name} = {value}")
             lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
             lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{tmp_offset}")
+
+            context["constant_temps"].add(tmp_name)   # 👈 ADD THIS!
 
             tmp_args.append((tmp_name, tmp_offset))
 
@@ -338,6 +341,8 @@ def emit_function_call(call_node, tmp_name, tmp_offset, context):
             # Allocate a temp to hold the constant
             tmp_name_const, tmp_offset_const = allocate_temp(context)
 
+            context["constant_temps"].add(tmp_name_const)  # 🔥 ADD THIS
+
             lines.append(f"\t# {tmp_name_const} = {value}")
             lines.append(f"\t  li $t2, {value}\t# load const {value}")
             lines.append(f"\t  sw $t2, {tmp_offset_const}($fp)\t# spill {tmp_name_const}")
@@ -456,3 +461,174 @@ def emit_print_statement(print_stmt, context):
 
         else:
             print(f"WARNING: Complex PrintStmt argument not handled: {arg}")
+
+def emit_relop_expression(expr, context):
+    """
+    Emits MIPS instructions to evaluate a relational expression.
+    Returns the name of the temp (_tmpN) holding the boolean result (0/1).
+    """
+    lines = context["lines"]
+
+    if "RelationalExpr" not in expr:
+        raise ValueError("emit_relop_expression expected RelationalExpr")
+
+    relop = expr["RelationalExpr"]
+    left = relop["left"]
+    right = relop["right"]
+    operator = relop["operator"]
+
+    # --- Load left operand ---
+    left_is_field = False
+    if "FieldAccess" in left:
+        left_var = left["FieldAccess"]["identifier"]
+        left_offset = context["var_locations"].get(left_var, 4)
+        left_is_field = True
+
+    elif "IntConstant" in left or "BoolConstant" in left:
+        val = int(left.get("IntConstant", left.get("BoolConstant"))["value"])
+        tmp_left, tmp_left_offset = allocate_temp(context)
+
+        if tmp_left not in context["constant_temps"]:
+            lines.append(f"\t# {tmp_left} = {val}")
+            lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
+            lines.append(f"\t  sw $t2, {tmp_left_offset}($fp)\t# spill {tmp_left} from $t2 to $fp{format_offset(tmp_left_offset)}")
+            context["constant_temps"].add(tmp_left)
+
+        left_var = tmp_left
+        left_offset = tmp_left_offset
+
+    else:
+        print(f"WARNING: Unsupported left operand type: {left}")
+
+    # --- Load right operand ---
+    right_is_field = False
+    if "FieldAccess" in right:
+        right_var = right["FieldAccess"]["identifier"]
+        right_offset = context["var_locations"].get(right_var, 8)
+        right_is_field = True
+
+    elif "IntConstant" in right or "BoolConstant" in right:
+        val = int(right.get("IntConstant", right.get("BoolConstant"))["value"])
+        tmp_right, tmp_right_offset = allocate_temp(context)
+
+        if tmp_right not in context["constant_temps"]:
+            lines.append(f"\t# {tmp_right} = {val}")
+            lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
+            lines.append(f"\t  sw $t2, {tmp_right_offset}($fp)\t# spill {tmp_right} from $t2 to $fp{format_offset(tmp_right_offset)}")
+            context["constant_temps"].add(tmp_right)
+
+        right_var = tmp_right
+        right_offset = tmp_right_offset
+
+    else:
+        print(f"WARNING: Unsupported right operand type: {right}")
+
+    # --- Allocate temp to store result ---
+    tmp_name, tmp_offset = allocate_temp(context)
+
+    # --- Emit the load instructions ---
+    lines.append(format_relop_comment(tmp_name, left_var, operator, right_var))
+    lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
+    lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
+
+    # --- Emit relational operation ---
+    emit_relop("$t0", "$t1", operator, "$t2", lines)
+
+    # --- Spill result ---
+    lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+
+    if operator in ("<=", ">="):
+        # --- Also emit equality check (==)
+        tmp_eq_name, tmp_eq_offset = allocate_temp(context)
+
+        # Emit lw for left and right again
+        lines.append(f"\t# {tmp_eq_name} = {left_var} == {right_var}")
+        lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
+        lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
+        emit_relop("$t0", "$t1", "==", "$t2", lines)
+
+        lines.append(f"\t  sw $t2, {tmp_eq_offset}($fp)\t# spill {tmp_eq_name} from $t2 to $fp{format_offset(tmp_eq_offset)}")
+
+        # --- Merge (or) tmp_name and tmp_eq_name into a final OR
+        tmp_final_name, tmp_final_offset = allocate_temp(context)
+
+        lines.append(f"\t# {tmp_final_name} = {tmp_name} || {tmp_eq_name}")
+        lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_name}")
+        lines.append(f"\t  lw $t1, {tmp_eq_offset}($fp)\t# fill {tmp_eq_name}")
+        lines.append(f"\t  or $t2, $t0, $t1")
+        lines.append(f"\t  sw $t2, {tmp_final_offset}($fp)\t# spill {tmp_final_name} from $t2 to $fp{format_offset(tmp_final_offset)}")
+
+        return tmp_final_name
+
+
+    return tmp_name
+
+def emit_if_statement(if_node, context):
+    lines = context["lines"]
+    test_expr = if_node["test"]
+    then_stmt = if_node.get("then")
+    else_stmt = if_node.get("else")
+
+    # --- 1. Evaluate full relational expression ---
+    tmp_cond = emit_relop_expression(test_expr, context)
+
+    # --- 2. Label setup ---
+    if_label = f"_L{context['if_counter']}"
+    end_label = f"_L{context['if_counter'] + 1}"
+    context["if_counter"] += 2
+
+    # --- 3. Conditional branch ---
+    lines.append(f"\t# IfZ {tmp_cond} Goto {if_label}")
+    lines.append(f"\t  lw $t0, {context['temp_locations'][tmp_cond]}($fp)\t# fill {tmp_cond}")
+    lines.append(f"\t  beqz $t0, {if_label}")
+
+    # --- 4. THEN block ---
+    if then_stmt:
+        emit_statement(then_stmt, context)
+
+    # --- 5. Jump over ELSE block ---
+    if else_stmt:
+        lines.append(f"\t  j {end_label}")
+
+    # --- 6. ELSE label ---
+    lines.append(f"{if_label}:")
+    if else_stmt:
+        emit_statement(else_stmt, context)
+        lines.append(f"{end_label}:")
+
+def emit_relop(left_reg, right_reg, operator, target_reg, lines):
+    """
+    Emits MIPS code for relational operations.
+    left_reg, right_reg: $t0, $t1
+    operator: "<", "<=", ">", ">=", "==", "!="
+    target_reg: e.g., $t2
+    """
+
+    if operator == "<" or operator == "<=":
+        lines.append(f"\t  slt {target_reg}, {left_reg}, {right_reg}")
+    elif operator == ">" or operator == ">=":
+        lines.append(f"\t  slt {target_reg}, {right_reg}, {left_reg}")
+    elif operator == "==":
+        lines.append(f"\t  seq {target_reg}, {left_reg}, {right_reg}")
+    elif operator == "!=":
+        lines.append(f"\t  sne {target_reg}, {left_reg}, {right_reg}")
+    else:
+        print(f"WARNING: Unsupported relational operator: {operator}")
+
+def emit_load_operand(operand, dest_reg, context, lines):
+    """
+    Emits MIPS instructions to load an operand (FieldAccess, IntConstant, BoolConstant) into dest_reg.
+    """
+    if "FieldAccess" in operand:
+        var_name = operand["FieldAccess"]["identifier"]
+        offset = context["var_locations"].get(var_name, -4)
+        lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# load {var_name}")
+    elif "IntConstant" in operand:
+        val = int(operand["IntConstant"]["value"])
+        lines.append(f"\t  li {dest_reg}, {val}\t# load int constant {val}")
+    elif "BoolConstant" in operand:
+        val = 1 if operand["BoolConstant"]["value"] == "true" else 0
+        lines.append(f"\t  li {dest_reg}, {val}\t# load bool constant {val}")
+    else:
+        print(f"WARNING: Unsupported operand type in emit_load_operand: {operand}")
+
