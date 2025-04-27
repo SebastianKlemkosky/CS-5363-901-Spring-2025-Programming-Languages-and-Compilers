@@ -275,7 +275,6 @@ def emit_assign_expression(assign_node, context):
     else:
         print(f"WARNING: Unhandled assignment value: {value}")
 
-
 def emit_assign_string_constant(assign_expr, context):
     lines = context["lines"]
     string_val = assign_expr["value"]["StringConstant"]["value"].strip('"')
