@@ -153,6 +153,10 @@ def emit_statement(stmt, context):
     elif "StmtBlock" in stmt:
         for sub_stmt in stmt["StmtBlock"]:
             emit_statement(sub_stmt, context)
+    
+    elif "Call" in stmt:
+        emit_function_call(stmt["Call"], context=context)
+
     else:
         print(f"WARNING: Unhandled statement: {stmt}")
 
@@ -180,14 +184,15 @@ def emit_assign_expression(assign_node, context):
 
     if "IntConstant" in value:
         val = int(value["IntConstant"]["value"])
-        
-        tmp_name, tmp_offset = allocate_temp(context)
 
+        tmp_name, tmp_offset = allocate_temp(context)
+        
         lines.append(f"\t# {tmp_name} = {val}")
         lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
         lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
         target_offset = context["var_locations"].get(target, -4)
+        
         lines.append(f"\t# {target} = {tmp_name}")
         lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
         lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
@@ -852,36 +857,34 @@ def emit_relop(left_reg, right_reg, operator, target_reg, lines):
 def emit_load_operand(operand, dest_reg, context, lines=None):
     """
     Emits MIPS instructions to load an operand (FieldAccess, IntConstant, BoolConstant) into dest_reg,
-    only if `lines` is provided. Otherwise just returns the (var_name, var_offset) without emitting.
+    only if `lines` is provided. Otherwise just returns the (var_name, var_offset).
     """
 
     if "FieldAccess" in operand:
         var_name = operand["FieldAccess"]["identifier"]
-        offset = context["var_locations"].get(var_name, 4)   # ✅ default positive 4
+        offset = context["var_locations"].get(var_name, 4)
 
         if lines is not None and dest_reg is not None:
-            lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{format_offset(offset)}")
+            if offset >= 0:
+                lines.append(f"\t  lw {dest_reg}, {offset}($gp)\t# fill {var_name} to {dest_reg} from $gp{format_offset(offset)}")
+            else:
+                lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{format_offset(offset)}")
 
         return var_name, offset
 
     elif "IntConstant" in operand:
         val = int(operand["IntConstant"]["value"])
-
         if lines is not None and dest_reg is not None:
             lines.append(f"\t  li {dest_reg}, {val}\t# load int constant {val} into {dest_reg}")
-
         return val, None
 
     elif "BoolConstant" in operand:
         val = 1 if operand["BoolConstant"]["value"] == "true" else 0
-
         if lines is not None and dest_reg is not None:
             lines.append(f"\t  li {dest_reg}, {val}\t# load bool constant {val} into {dest_reg}")
-
         return val, None
-    
+
     elif "Call" in operand:
-        # Recursive function call inside an expression
         tmp_call_name, tmp_call_offset = emit_function_call(operand["Call"], context=context)
         if lines is not None and dest_reg is not None:
             lines.append(f"\t  lw {dest_reg}, {tmp_call_offset}($fp)\t# fill {tmp_call_name} to {dest_reg} from $fp{format_offset(tmp_call_offset)}")
@@ -932,7 +935,7 @@ def emit_if_statement(if_node, context):
     lines.append(f"  {label_true}:")
     if else_stmt:
         emit_statement(else_stmt, context)
-        lines.append(f"{label_false}:")
+        lines.append(f"  {label_false}:")
 
 def emit_for_statement(for_node, context):
     lines = context["lines"]
