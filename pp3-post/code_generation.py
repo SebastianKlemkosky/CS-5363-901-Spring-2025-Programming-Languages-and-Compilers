@@ -180,7 +180,7 @@ def emit_assign_expression(assign_node, context):
 
     if "IntConstant" in value:
         val = int(value["IntConstant"]["value"])
-
+        
         tmp_name, tmp_offset = allocate_temp(context)
 
         lines.append(f"\t# {tmp_name} = {val}")
@@ -349,88 +349,6 @@ def emit_assign_call(assign_expr, context):
     lines.append(f"\t# {dest_var} = {tmp_name}")
     lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{tmp_offset}")
     lines.append(f"\t  sw $t2, {dest_offset}($fp)\t# spill {dest_var} from $t2 to $fp{dest_offset}")
-
-def emit_return_statement(return_stmt, context):
-    lines = context["lines"]
-    expr = return_stmt["expr"]
-
-    # --- NEW CASE: Direct return of a constant (like return 1;) ---
-    if "IntConstant" in expr:
-        value = int(expr["IntConstant"]["value"])
-        tmp_name, tmp_offset = allocate_temp(context)
-        #print(f"RETURN statement allocating: {tmp_name}")
-
-        lines.append(f"\t# {tmp_name} = {value}")
-        lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
-        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
-
-        lines.append(f"\t# Return {tmp_name}")
-        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
-        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
-
-        # Inline epilogue
-        lines.extend(emit_epilogue_lines(add_end_comment=False))
-        return
-
-    # --- Existing CASE: Return an ArithmeticExpr ---
-    if "ArithmeticExpr" in expr:
-        arith = expr["ArithmeticExpr"]
-
-        left = arith["left"]
-        right = arith["right"]
-        op = arith["operator"]
-
-        # Special handling if right is a constant
-        if "IntConstant" in right:
-            const_val = int(right["IntConstant"]["value"])
-            
-            tmp_const_name, tmp_const_offset = allocate_temp(context)
-
-            lines.append(f"\t# {tmp_const_name} = {const_val}")
-            lines.append(f"\t  li $t2, {const_val}\t    # load constant value {const_val} into $t2")
-            lines.append(f"\t  sw $t2, {tmp_const_offset}($fp)\t# spill {tmp_const_name} from $t2 to $fp{format_offset(tmp_const_offset)}")
-
-            # Now left side
-            left_var, left_offset = emit_load_operand(left, "$t0", context, lines)
-
-            tmp_result_name, tmp_result_offset = allocate_temp(context)
-
-            lines.append(f"\t# {tmp_result_name} = {left_var} {op} {tmp_const_name}")
-            lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
-            lines.append(f"\t  lw $t1, {tmp_const_offset}($fp)\t# fill {tmp_const_name} to $t1 from $fp{format_offset(tmp_const_offset)}")
-
-        else:
-            # General case (left and right both vars)
-            left_var, left_offset = emit_load_operand(left, "$t0", context, lines)
-            right_var, right_offset = emit_load_operand(right, "$t1", context, lines)
-
-            tmp_result_name, tmp_result_offset = allocate_temp(context)
-
-            lines.append(f"\t# {tmp_result_name} = {left_var} {op} {right_var}")
-            lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
-            lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
-
-        # --- Operation
-        if op == "+":
-            lines.append(f"\t  add $t2, $t0, $t1")
-        elif op == "-":
-            lines.append(f"\t  sub $t2, $t0, $t1")
-        elif op == "*":
-            lines.append(f"\t  mul $t2, $t0, $t1")
-        elif op == "/":
-            lines.append(f"\t  div $t2, $t0, $t1")
-        else:
-            lines.append(f"\t  # unsupported op: {op}")
-
-        lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} from $t2 to $fp{format_offset(tmp_result_offset)}")
-
-        # --- Return result
-        lines.append(f"\t# Return {tmp_result_name}")
-        lines.append(f"\t  lw $t2, {tmp_result_offset}($fp)\t# fill {tmp_result_name} to $t2 from $fp{format_offset(tmp_result_offset)}")
-        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
-
-        lines.extend(emit_epilogue_lines(add_end_comment=False))
-        return
 
 def OLD_emit_function_call_Old(call_node, tmp_name=None, tmp_offset=None, context=None, allocate_inner_constants=True):
     lines = context["lines"]
@@ -940,6 +858,7 @@ def emit_load_operand(operand, dest_reg, context, lines):
     if "FieldAccess" in operand:
         var_name = operand["FieldAccess"]["identifier"]
         offset = context["var_locations"].get(var_name, 4)   # ✅ default positive 4
+        lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{format_offset(offset)}")
         return var_name, offset
 
     elif "IntConstant" in operand:
@@ -990,8 +909,7 @@ def emit_if_statement(if_node, context):
 
     # --- 5. Jump over ELSE block ---
     if else_stmt:
-        lines.append(f"\t# Goto {label_false}")
-        lines.append(f"\t  b {label_false}\t    # unconditional branch")
+        lines.append(f"\t  j {label_false}")
 
     # --- 6. ELSE label ---
     lines.append(f"  {label_true}:")
@@ -1141,3 +1059,99 @@ def emit_continue_statement(context):
 
     lines.append(f"\t# Continue: jump to {context['continue_label']}")
     lines.append(f"\t  b {context['continue_label']}\t    # continue jumps to start of loop")
+
+def emit_return_statement(return_stmt, context):
+    lines = context["lines"]
+    expr = return_stmt["expr"]
+
+    # --- NEW CASE: Direct return of a constant (like return 1;) ---
+    if "IntConstant" in expr:
+        value = int(expr["IntConstant"]["value"])
+        tmp_name, tmp_offset = allocate_temp(context)
+        #print(f"RETURN statement allocating: {tmp_name}")
+
+        lines.append(f"\t# {tmp_name} = {value}")
+        lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+
+        lines.append(f"\t# Return {tmp_name}")
+        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
+        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
+
+        # Inline epilogue
+        lines.extend(emit_epilogue_lines(add_end_comment=False))
+        return
+
+    # --- Existing CASE: Return an ArithmeticExpr ---
+    if "ArithmeticExpr" in expr:
+        arith = expr["ArithmeticExpr"]
+
+        left = arith["left"]
+        if "FieldAccess" in left:
+            left_var = left["FieldAccess"]["identifier"]
+            a_offset = context["var_locations"].get(left_var, 4)
+        elif "IntConstant" in left:
+            left_var = left_val = int(left["IntConstant"]["value"])
+            a_offset = None
+        else:
+            print(f"WARNING: Unhandled left expression: {left}")
+            a_offset = None
+
+        right = arith["right"]
+        if "FieldAccess" in right:
+            right_var = right["FieldAccess"]["identifier"]
+            b_offset = context["var_locations"].get(right_var, 8)
+        elif "IntConstant" in right:
+            right_var = right_val = int(right["IntConstant"]["value"])
+            b_offset = None
+        elif "Call" in right:
+            call_node = right["Call"]
+            tmp_name_call, tmp_offset_call = allocate_temp(context)
+            tmp_name_call, tmp_offset_call = emit_function_call(call_node, tmp_name_call, tmp_offset_call, context, False)
+
+            right_var = tmp_name_call
+            b_offset = tmp_offset_call
+        else:
+            print(f"WARNING: Unhandled right expression: {right}")
+            b_offset = None
+
+        op = arith["operator"]
+
+        # --- Allocate _tmpN for result ---
+        result_tmp, result_offset = allocate_temp(context)
+        
+        # --- Correct Order: first comment ---
+        lines.append(f"\t# {result_tmp} = {left_var} {op} {right_var}")
+
+        # --- Load operands ---
+        if a_offset is not None:
+            lines.append(f"\t  lw $t0, {a_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(a_offset)}")
+        else:
+            lines.append(f"\t  li $t0, {left_var}\t# load const {left_var} into $t0")
+
+        if b_offset is not None:
+            lines.append(f"\t  lw $t1, {b_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(b_offset)}")
+        else:
+            lines.append(f"\t  li $t1, {right_var}\t# load const {right_var} into $t1")
+
+        # --- Perform the operation ---
+        if op == "+":
+            lines.append(f"\t  add $t2, $t0, $t1")
+        elif op == "-":
+            lines.append(f"\t  sub $t2, $t0, $t1")
+        elif op == "*":
+            lines.append(f"\t  mul $t2, $t0, $t1")
+        elif op == "/":
+            lines.append(f"\t  div $t2, $t0, $t1")
+        else:
+            lines.append(f"\t  # unsupported op: {op}")
+
+        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp} from $t2 to $fp{result_offset}")
+
+        # --- Return result ---
+        lines.append(f"\t# Return {result_tmp}")
+        lines.append(f"\t  lw $t2, {result_offset}($fp)\t# fill {result_tmp} to $t2 from $fp{result_offset}")
+        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
+
+        # --- Inline epilogue ---
+        lines.extend(emit_epilogue_lines(add_end_comment=False))
