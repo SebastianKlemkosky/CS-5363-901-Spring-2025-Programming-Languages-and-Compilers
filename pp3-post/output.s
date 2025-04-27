@@ -12,7 +12,7 @@
 	# IfZ c Goto _L0
 	  lw $t0, 8($fp)	# fill c to $t0 from $fp+8
 	  beqz $t0, _L0	# branch if c is zero
-	# _tmp0 = a + 2
+	# _tmp0 =1 a + 2
 	  lw $t0, 4($fp)	# fill a to $t0 from $fp+4
 	  li $t1, 2	# load const 2 into $t1
 	  add $t2, $t0, $t1
