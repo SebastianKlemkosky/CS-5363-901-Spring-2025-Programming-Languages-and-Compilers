@@ -61,7 +61,7 @@
 	  add $sp, $sp, 4	# pop params off stack
 	# _tmp8 = n * _tmp7
 	  lw $t0, 4($fp)	# fill n to $t0 from $fp+4
-	  lw $t1, -36($fp)	# fill _tmp7 to $t1 from $fp+-36
+	  lw $t1, -36($fp)	# fill _tmp7 to $t1 from $fp-36
 	  mul $t2, $t0, $t1
 	  sw $t2, -40($fp)	# spill _tmp8 from $t2 to $fp-40
 	# Return _tmp8
@@ -78,12 +78,12 @@
 	  lw $fp, 0($fp)    # restore saved fp
 	  jr $ra        # return from function
   main:
-    # BeginFunc 40
+    # BeginFunc 48
 	  subu $sp, $sp, 8  # decrement sp to make space to save ra, fp
 	  sw $fp, 8($sp)    # save fp
 	  sw $ra, 4($sp)    # save ra
 	  addiu $fp, $sp, 8 # set up new fp
-	  subu $sp, $sp, 40 # decrement sp to make space for locals/temps
+	  subu $sp, $sp, 48 # decrement sp to make space for locals/temps
 	# _tmp9 = 1
 	  li $t2, 1	    # load constant value 1 into $t2
 	  sw $t2, -12($fp)	# spill _tmp9 from $t2 to $fp-12
@@ -148,40 +148,52 @@
 	  jal _PrintString      # jump to function
 	# PopParams 4
 	  add $sp, $sp, 4	# pop params off stack
-	# LCall _factorial
-	  jal _factorial	      # jump to function
-	  move $t2, $v0	# copy return value into $t2
-	# PushParam return value
+	# PushParam n
 	  subu $sp, $sp, 4	# decrement sp to make space for param
-	  sw $t2, 4($sp)	# copy return value to stack
-	# LCall _PrintInt
-	  jal _PrintInt	           # jump to function
+	  lw $t0, -8($fp)	# fill n to $t0 from $fp-8
+	  sw $t0, 4($sp)	# copy param value to stack
+	# _tmp16 = LCall _factorial
+	  jal _factorial	    # jump to function
+	  move $t2, $v0	    # copy function return value from $v0
+	  sw $t2, -40($fp)	# spill _tmp16 from $t2 to $fp-40
 	# PopParams 4
 	  add $sp, $sp, 4	# pop params off stack
-	# _tmp16 = "\n"
+	# PushParam _tmp16
+	  subu $sp, $sp, 4	# decrement sp to make space for param
+	  lw $t0, -40($fp)	# fill _tmp16 to $t0 from $fp-40
+	  sw $t0, 4($sp)	# copy param value to stack
+	# LCall _PrintInt
+	  jal _PrintInt         # jump to function
+	# PopParams 4
+	  add $sp, $sp, 4	# pop params off stack
+	# _tmp17 = "\n"
 	  .data 	    # create string constant marked with label
 	  _string3: .asciiz "\n"
 	  .text
 	  la $t2, _string3	# load label
-	  sw $t2, -40($fp)	# spill _tmp16 from $t2 to $fp-40
-	# PushParam _tmp16
+	  sw $t2, -44($fp)	# spill _tmp17 from $t2 to $fp-44
+	# PushParam _tmp17
 	  subu $sp, $sp, 4	# decrement sp to make space for param
-	  lw $t0, -40($fp)	# fill _tmp16 to $t0 from $fp-40
+	  lw $t0, -44($fp)	# fill _tmp17 to $t0 from $fp-44
 	  sw $t0, 4($sp)	# copy param value to stack
 	# LCall _PrintString
 	  jal _PrintString      # jump to function
 	# PopParams 4
 	  add $sp, $sp, 4	# pop params off stack
+	# _tmp18 = 1
+	  li $t2, 1	    # load constant value 1 into $t2
+	  sw $t2, -48($fp)	# spill _tmp18 from $t2 to $fp-48
+	# _tmp19 = n + _tmp18
 	  lw $t0, -8($fp)	# fill n to $t0 from $fp-8
-	  li $t1, 1	# load int constant 1 into $t1
-	# _tmp17 = n + 1
+	  lw $t1, -48($fp)	# fill _tmp18 to $t1 from $fp-48
 	  add $t2, $t0, $t1
-	  sw $t2, -44($fp)	# spill _tmp17 from $t2 to $fp-44
-	# n = _tmp17
-	  lw $t2, -44($fp)	# fill _tmp17 to $t2 from $fp-44
+	  sw $t2, -52($fp)	# spill _tmp19 from $t2 to $fp-52
+	# n = _tmp19
+	  lw $t2, -52($fp)	# fill _tmp19 to $t2 from $fp-52
 	  sw $t2, -8($fp)	# spill n from $t2 to $fp-8
-	  j _L1
-_L2:
+	# Goto _L1
+	  b _L1	    # unconditional branch
+  _L2:
     # EndFunc
     # (below handles reaching end of fn body with no explicit return)
 	  move $sp, $fp     # pop callee frame off stack

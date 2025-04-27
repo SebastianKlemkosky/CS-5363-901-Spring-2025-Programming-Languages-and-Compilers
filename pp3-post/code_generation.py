@@ -142,17 +142,15 @@ def emit_statement(stmt, context):
         emit_for_statement(stmt["ForStmt"], context)
 
     elif "WhileStmt" in stmt:
-        # emit_while_statement(stmt["WhileStmt"], context)
-        pass
+        emit_while_statement(stmt["WhileStmt"], context)
+       
 
     elif "BreakStmt" in stmt:
-        # emit_break_statement(stmt["BreakStmt"], context)
-        pass
-
+        emit_break_statement(stmt["BreakStmt"], context)
+        
     elif "ContinueStmt" in stmt:
-        # emit_continue_statement(stmt["ContinueStmt"], context)
-        pass
-
+        emit_continue_statement(stmt["ContinueStmt"], context)
+        
     elif "StmtBlock" in stmt:
         for sub_stmt in stmt["StmtBlock"]:
             emit_statement(sub_stmt, context)
@@ -185,14 +183,12 @@ def emit_assign_expression(assign_node, context):
     if "IntConstant" in value:
         val = int(value["IntConstant"]["value"])
 
-        # --- Allocate a temp for the constant
         tmp_name, tmp_offset = allocate_temp(context)
 
         lines.append(f"\t# {tmp_name} = {val}")
         lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
         lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
-        # --- Now assign the temp into the target
         target_offset = context["var_locations"].get(target, -4)
         lines.append(f"\t# {target} = {tmp_name}")
         lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
@@ -210,35 +206,63 @@ def emit_assign_expression(assign_node, context):
         right = arith["right"]
         op = arith["operator"]
 
-        # --- Load left and right operands using helper ---
-        left_var, _ = emit_load_operand(left, "$t0", context, lines)
-        right_var, _ = emit_load_operand(right, "$t1", context, lines)
+        # --- FIRST: handle right if constant (special case for step like n = n + 1)
+        right_is_const = "IntConstant" in right
 
-        # --- Allocate a temp for the result ---
-        tmp_name, tmp_offset = allocate_temp(context)
+        if right_is_const:
+            const_val = int(right["IntConstant"]["value"])
+            tmp_const_name, tmp_const_offset = allocate_temp(context)
 
-        lines.append(f"\t# {tmp_name} = {left_var} {op} {right_var}")
+            lines.append(f"\t# {tmp_const_name} = {const_val}")
+            lines.append(f"\t  li $t2, {const_val}\t    # load constant value {const_val} into $t2")
+            lines.append(f"\t  sw $t2, {tmp_const_offset}($fp)\t# spill {tmp_const_name} from $t2 to $fp{format_offset(tmp_const_offset)}")
 
-        # --- Perform the operation ---
-        if op == "+":
-            lines.append(f"\t  add $t2, $t0, $t1")
-        elif op == "-":
-            lines.append(f"\t  sub $t2, $t0, $t1")
-        elif op == "*":
-            lines.append(f"\t  mul $t2, $t0, $t1")
-        elif op == "/":
-            lines.append(f"\t  div $t2, $t0, $t1")
+            tmp_result_name, tmp_result_offset = allocate_temp(context)
+            lines.append(f"\t# {tmp_result_name} = {left['FieldAccess']['identifier']} {op} {tmp_const_name}")
+
+            left_var, left_offset = emit_load_operand(left, "$t0", context, lines)
+            lines.append(f"\t  lw $t1, {tmp_const_offset}($fp)\t# fill {tmp_const_name} to $t1 from $fp{format_offset(tmp_const_offset)}")
+
+            if op == "+":
+                lines.append(f"\t  add $t2, $t0, $t1")
+            elif op == "-":
+                lines.append(f"\t  sub $t2, $t0, $t1")
+            elif op == "*":
+                lines.append(f"\t  mul $t2, $t0, $t1")
+            elif op == "/":
+                lines.append(f"\t  div $t2, $t0, $t1")
+            else:
+                lines.append(f"\t  # unsupported operator {op}")
+
+            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} from $t2 to $fp{format_offset(tmp_result_offset)}")
+
         else:
-            lines.append(f"\t  # unsupported operator {op}")
+            # --- NORMAL case (both are vars, no extra temp for constant needed)
+            left_var, left_offset = emit_load_operand(left, "$t0", context, lines)
+            right_var, right_offset = emit_load_operand(right, "$t1", context, lines)
 
-        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+            tmp_result_name, tmp_result_offset = allocate_temp(context)
+            lines.append(f"\t# {tmp_result_name} = {left_var} {op} {right_var}")
 
-        # --- Finally, assign the temp into target variable ---
+            if op == "+":
+                lines.append(f"\t  add $t2, $t0, $t1")
+            elif op == "-":
+                lines.append(f"\t  sub $t2, $t0, $t1")
+            elif op == "*":
+                lines.append(f"\t  mul $t2, $t0, $t1")
+            elif op == "/":
+                lines.append(f"\t  div $t2, $t0, $t1")
+            else:
+                lines.append(f"\t  # unsupported operator {op}")
+
+            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} from $t2 to $fp{format_offset(tmp_result_offset)}")
+
+        # --- assign temp into target
         target_offset = context["var_locations"].get(target, -4)
-        lines.append(f"\t# {target} = {tmp_name}")
-        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
+        lines.append(f"\t# {target} = {tmp_result_name}")
+        lines.append(f"\t  lw $t2, {tmp_result_offset}($fp)\t# fill {tmp_result_name} to $t2 from $fp{format_offset(tmp_result_offset)}")
         lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
-    
+
     elif "FieldAccess" in value:
         source_var = value["FieldAccess"]["identifier"]
         source_offset = context["var_locations"].get(source_var, -4)
@@ -250,6 +274,7 @@ def emit_assign_expression(assign_node, context):
 
     else:
         print(f"WARNING: Unhandled assignment value: {value}")
+
 
 def emit_assign_string_constant(assign_expr, context):
     lines = context["lines"]
@@ -394,12 +419,12 @@ def emit_return_statement(return_stmt, context):
 
         # --- Load operands ---
         if a_offset is not None:
-            lines.append(f"\t  lw $t0, {a_offset}($fp)\t# fill {left_var} to $t0 from $fp+{a_offset}")
+            lines.append(f"\t  lw $t0, {a_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(a_offset)}")
         else:
             lines.append(f"\t  li $t0, {left_var}\t# load const {left_var} into $t0")
 
         if b_offset is not None:
-            lines.append(f"\t  lw $t1, {b_offset}($fp)\t# fill {right_var} to $t1 from $fp+{b_offset}")
+            lines.append(f"\t  lw $t1, {b_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(b_offset)}")
         else:
             lines.append(f"\t  li $t1, {right_var}\t# load const {right_var} into $t1")
 
@@ -425,8 +450,7 @@ def emit_return_statement(return_stmt, context):
         # --- Inline epilogue ---
         lines.extend(emit_epilogue_lines(add_end_comment=False))
 
-def emit_function_call(call_node, tmp_name, tmp_offset, context ,allocate_inner_constants=True):
-    
+def emit_function_call(call_node, tmp_name=None, tmp_offset=None, context=None, allocate_inner_constants=True):
     lines = context["lines"]
     func_name = call_node["identifier"]
     args = call_node.get("actuals", [])
@@ -581,34 +605,30 @@ def emit_print_statement(print_stmt, context):
 
             lines.append(f"\t# LCall _PrintString")
             lines.append(f"\t  jal _PrintString      # jump to function")
-
+            
             lines.append(f"\t# PopParams 4")
             lines.append(f"\t  add $sp, $sp, 4\t# pop params off stack")
 
         elif "Call" in arg:
             call_node = arg["Call"]
-            func_name = call_node["identifier"]
 
-            # Emit function call (no temp needed!)
-            lines.append(f"\t# LCall _{func_name}")
-            lines.append(f"\t  jal _{func_name}\t      # jump to function")
-            lines.append(f"\t  move $t2, $v0\t# copy return value into $t2")
+            if tmp_name is None and tmp_offset is None:
+                tmp_name, tmp_offset = allocate_temp(context)
 
-            # Now PushParam using $t2 directly
-            lines.append(f"\t# PushParam return value")
-            lines.append(f"\t  subu $sp, $sp, 4\t# decrement sp to make space for param")
-            lines.append(f"\t  sw $t2, 4($sp)\t# copy return value to stack")
+            tmp_name, tmp_offset = emit_function_call(call_node, tmp_name, tmp_offset, context)
 
-            # Decide what print function to use (since return type in Decaf here is int)
+            lines.append(f"\t# PushParam {tmp_name}")
+            emit_push_param(lines, tmp_offset, tmp_name)
+
             lines.append(f"\t# LCall _PrintInt")
-            lines.append(f"\t  jal _PrintInt\t           # jump to function")
+            lines.append(f"\t  jal _PrintInt         # jump to function")
 
             lines.append(f"\t# PopParams 4")
             lines.append(f"\t  add $sp, $sp, 4\t# pop params off stack")
 
+
         else:
             print(f"WARNING: Complex PrintStmt argument not handled: {arg}")
-
 
 def emit_relop_expression(expr, context):
     """
@@ -800,7 +820,7 @@ def emit_for_statement(for_node, context):
 
     # --- 2. Emit initialization (only once)
     if init:
-        emit_assign_expression(init["AssignExpr"], context)
+        emit_assign_expression(init["AssignExpr"], context)  # <--- unwrap AssignExpr
 
     # --- 3. Label: Start of loop
     lines.append(f"  {label_true}:")
@@ -813,17 +833,99 @@ def emit_for_statement(for_node, context):
         lines.append(f"\t  lw $t0, {context['temp_locations'][tmp_cond]}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(context['temp_locations'][tmp_cond])}")
         lines.append(f"\t  beqz $t0, {label_false}\t# branch if {tmp_cond} is zero")
 
+    old_break_label = context.get("break_label")
+    old_continue_label = context.get("continue_label")
+    context["break_label"] = label_false
+    context["continue_label"] = label_true
+
     # --- 5. Emit body (loop body)
     if body:
         emit_statement(body, context)
 
-    # --- 6. Emit step (increment/decrement)
+    context["break_label"] = old_break_label
+    context["continue_label"] = old_continue_label
+
+
+    # --- 6. Emit step (correct handling for n = n + 1)
     if step:
+        #lines.append(f"START")
         emit_assign_expression(step["AssignExpr"], context)
 
+
     # --- 7. Jump back to start
-    lines.append(f"\t  j {label_true}")
+    lines.append(f"\t# Goto {label_true}")
+    lines.append(f"\t  b {label_true}\t    # unconditional branch")
 
     # --- 8. Label: End of loop
+    lines.append(f"  {label_false}:")
+
+def emit_while_statement(while_node, context):
+    """
+    Emits MIPS instructions for a WhileStmt node.
+    """
+    lines = context["lines"]
+
+    test = while_node.get("test")
+    body = while_node.get("body")
+
+    # --- 1. Labels
+    label_true, label_false = allocate_label(context)
+
+    # --- 2. Label: Start of loop
+    lines.append(f"  {label_true}:")
+
+    # --- 3. Emit test (conditional jump out)
+    if test:
+        tmp_cond = emit_relop_expression(test, context)
+
+        lines.append(f"\t# IfZ {tmp_cond} Goto {label_false}")
+        lines.append(f"\t  lw $t0, {context['temp_locations'][tmp_cond]}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(context['temp_locations'][tmp_cond])}")
+        lines.append(f"\t  beqz $t0, {label_false}\t# branch if {tmp_cond} is zero")
+
+    old_break_label = context.get("break_label")
+    old_continue_label = context.get("continue_label")
+    context["break_label"] = label_false
+    context["continue_label"] = label_true
+
+    # --- Emit body (loop body)
+    if body:
+        emit_statement(body, context)
+
+    # --- Restore previous break/continue labels
+    context["break_label"] = old_break_label
+    context["continue_label"] = old_continue_label
+
+
+    # --- 5. Jump back to start
+    lines.append(f"\t# Goto {label_true}")
+    lines.append(f"\t  b {label_true}\t   # unconditional branch")
+
+    # --- 6. Label: End of loop
     lines.append(f"{label_false}:")
+
+def emit_break_statement(context):
+    """
+    Emits MIPS code for a break statement inside a loop.
+    """
+    lines = context["lines"]
+
+    if context.get("break_label") is None:
+        print("WARNING: 'break' used outside a loop!")
+        return
+
+    lines.append(f"\t# Break: jump to {context['break_label']}")
+    lines.append(f"\t  b {context['break_label']}\t    # break jumps to end of loop")
+
+def emit_continue_statement(context):
+    """
+    Emits MIPS code for a continue statement inside a loop.
+    """
+    lines = context["lines"]
+
+    if context.get("continue_label") is None:
+        print("WARNING: 'continue' used outside a loop!")
+        return
+
+    lines.append(f"\t# Continue: jump to {context['continue_label']}")
+    lines.append(f"\t  b {context['continue_label']}\t    # continue jumps to start of loop")
 
