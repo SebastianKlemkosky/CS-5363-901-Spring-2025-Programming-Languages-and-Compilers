@@ -337,6 +337,6 @@ def allocate_label(context):
     Allocates and returns two new unique labels (e.g., _L0, _L1) and increments the label counter.
     """
     label_true = f"_L{context['label_counter']}"
-    label_false = f"_L{context['label_counter'] + 1}"
+    label_false = f"_L{context['label_counter']+1}"
     context["label_counter"] += 1
     return label_true, label_false

@@ -927,4 +927,3 @@ def emit_continue_statement(context):
 
     lines.append(f"\t# Continue: jump to {context['continue_label']}")
     lines.append(f"\t  b {context['continue_label']}\t    # continue jumps to start of loop")
-
