@@ -1,5 +1,5 @@
 # code_generation.py
-from helper_functions import calculate_frame_size, allocate_temp, get_print_function_for_type, get_var_type, format_relop_comment, format_offset
+from helper_functions import calculate_frame_size, allocate_temp, get_print_function_for_type, get_var_type, format_relop_comment, format_offset, allocate_label
 
 def generate_code(ast_root):
     lines = []
@@ -17,10 +17,11 @@ def generate_code(ast_root):
 
     # Step 2: Emit functions with a shared temp counter
     temp_counter = 0
+    label_counter = 0
     for node in ast_root["Program"]:
         if "FnDecl" in node:
             fn_decl = node["FnDecl"]
-            fn_lines, temp_counter = emit_function(fn_decl, temp_counter)
+            fn_lines, temp_counter, label_counter = emit_function(fn_decl, temp_counter, label_counter)
             lines.extend(fn_lines)
 
     return "\n".join(lines) + "\n"
@@ -73,7 +74,7 @@ def emit_push_param(lines, offset, var_name=None):
         lines.append(f"\t  lw $t0, {offset}($fp)\t# fill temp to $t0 from $fp{offset}")
     lines.append("\t  sw $t0, 4($sp)\t# copy param value to stack")
 
-def emit_function(fn_decl, temp_counter):
+def emit_function(fn_decl, temp_counter, label_counter):
     fn_name = fn_decl["identifier"]["Identifier"]["name"]
 
     # Create context for this function
@@ -87,8 +88,8 @@ def emit_function(fn_decl, temp_counter):
         "temp_counter": temp_counter,
         "offset": -8,  # locals grow downward
         "lines": [],
-        "if_counter": 0,
-        "loop_counter": 0
+        "label_counter": label_counter
+
     }
 
     # --- Handle function parameters ---
@@ -118,7 +119,7 @@ def emit_function(fn_decl, temp_counter):
     lines.extend(context["lines"])
     lines.extend(emit_epilogue_lines(add_end_comment=True))
 
-    return lines, context["temp_counter"]
+    return lines, context["temp_counter"], context["label_counter"]
 
 def emit_statement(stmt, context):
   
@@ -152,21 +153,25 @@ def emit_statement(stmt, context):
         # emit_continue_statement(stmt["ContinueStmt"], context)
         pass
 
+    elif "StmtBlock" in stmt:
+        for sub_stmt in stmt["StmtBlock"]:
+            emit_statement(sub_stmt, context)
+
     else:
         print(f"WARNING: Unhandled statement: {stmt}")
 
-def emit_vardecl(decl_node, context):
-
+def emit_vardecl(vardecl_node, context):
     lines = context["lines"]
-    var_name = decl_node["identifier"]
-    var_type = decl_node["type"]
+    var_name = vardecl_node["identifier"]
+    var_type = vardecl_node["type"]
 
-    # Assume only 'int' type for now
-    if var_type == "int":
-        # Allocate 4 bytes
-        offset = context["offset"]
-        context["var_locations"][var_name] = offset
-        context["offset"] -= 4
+    # Assign space in frame
+    offset = context["offset"]
+    context["offset"] -= 4
+    context["var_locations"][var_name] = offset
+
+    # 🔥 Save type information
+    context["var_types"][var_name] = var_type
 
 def emit_assign_expression(assign_node, context):
     """
@@ -179,9 +184,18 @@ def emit_assign_expression(assign_node, context):
 
     if "IntConstant" in value:
         val = int(value["IntConstant"]["value"])
+
+        # --- Allocate a temp for the constant
+        tmp_name, tmp_offset = allocate_temp(context)
+
+        lines.append(f"\t# {tmp_name} = {val}")
+        lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+
+        # --- Now assign the temp into the target
         target_offset = context["var_locations"].get(target, -4)
-        lines.append(f"\t# {target} = {val}")
-        lines.append(f"\t  li $t2, {val}\t# load constant {val} into $t2")
+        lines.append(f"\t# {target} = {tmp_name}")
+        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
         lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
 
     elif "StringConstant" in value:
@@ -223,6 +237,15 @@ def emit_assign_expression(assign_node, context):
         target_offset = context["var_locations"].get(target, -4)
         lines.append(f"\t# {target} = {tmp_name}")
         lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
+        lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
+    
+    elif "FieldAccess" in value:
+        source_var = value["FieldAccess"]["identifier"]
+        source_offset = context["var_locations"].get(source_var, -4)
+        target_offset = context["var_locations"].get(target, -4)
+
+        lines.append(f"\t# {target} = {source_var}")
+        lines.append(f"\t  lw $t2, {source_offset}($fp)\t# fill {source_var} to $t2 from $fp{format_offset(source_offset)}")
         lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
 
     else:
@@ -509,7 +532,6 @@ def emit_function_call(call_node, tmp_name, tmp_offset, context ,allocate_inner_
 def emit_print_statement(print_stmt, context):
     lines = context["lines"]
 
-    # Centralized mapping of type -> print function
     type_to_print_fn = {
         "int": "_PrintInt",
         "string": "_PrintString",
@@ -526,41 +548,67 @@ def emit_print_statement(print_stmt, context):
                 raise KeyError(f"Variable '{var_name}' not found in var_locations")
 
             var_type = get_var_type(arg["FieldAccess"], context)
-
-            # Look up print function by type
-            print_fn = type_to_print_fn.get(var_type, "_PrintInt")  # fallback to _PrintInt
+            print_fn = type_to_print_fn.get(var_type, "_PrintInt")
 
             lines.append(f"\t# PushParam {var_name}")
             emit_push_param(lines, offset, var_name)
 
             lines.append(f"\t# LCall {print_fn}")
-            if print_fn == "_PrintString":
-                lines.append(f"\t  jal {print_fn}      # jump to function")
-            else:
-                lines.append(f"\t  jal {print_fn}         # jump to function")
-
+            lines.append(f"\t  jal {print_fn}        # jump to function")
 
             lines.append(f"\t# PopParams 4")
             lines.append(f"\t  add $sp, $sp, 4\t# pop params off stack")
 
         elif "StringConstant" in arg:
             value = arg["StringConstant"]["value"]
-            print(f"WARNING: Print StringConstant '{value}' not supported yet")
 
-        elif "IntConstant" in arg:
-            value = arg["IntConstant"]["value"]
-            print(f"WARNING: Print IntConstant {value} not supported yet")
+            # Create a string label
+            label_name = f"_string{context['string_counter']}"
+            context['string_table'][label_name] = value
+            context['string_counter'] += 1
 
-        elif "BoolConstant" in arg:
-            value = arg["BoolConstant"]["value"]
-            print(f"WARNING: Print BoolConstant {value} not supported yet")
+            tmp_name, tmp_offset = allocate_temp(context)
 
-        elif "DoubleConstant" in arg:
-            value = arg["DoubleConstant"]["value"]
-            print(f"WARNING: Print DoubleConstant {value} not supported yet")
+            lines.append(f"\t# {tmp_name} = {value}")
+            lines.append("\t  .data \t    # create string constant marked with label")
+            lines.append(f"\t  {label_name}: .asciiz {value}")
+            lines.append("\t  .text")
+            lines.append(f"\t  la $t2, {label_name}\t# load label")
+            lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+
+            lines.append(f"\t# PushParam {tmp_name}")
+            emit_push_param(lines, tmp_offset, tmp_name)
+
+            lines.append(f"\t# LCall _PrintString")
+            lines.append(f"\t  jal _PrintString      # jump to function")
+
+            lines.append(f"\t# PopParams 4")
+            lines.append(f"\t  add $sp, $sp, 4\t# pop params off stack")
+
+        elif "Call" in arg:
+            call_node = arg["Call"]
+            func_name = call_node["identifier"]
+
+            # Emit function call (no temp needed!)
+            lines.append(f"\t# LCall _{func_name}")
+            lines.append(f"\t  jal _{func_name}\t      # jump to function")
+            lines.append(f"\t  move $t2, $v0\t# copy return value into $t2")
+
+            # Now PushParam using $t2 directly
+            lines.append(f"\t# PushParam return value")
+            lines.append(f"\t  subu $sp, $sp, 4\t# decrement sp to make space for param")
+            lines.append(f"\t  sw $t2, 4($sp)\t# copy return value to stack")
+
+            # Decide what print function to use (since return type in Decaf here is int)
+            lines.append(f"\t# LCall _PrintInt")
+            lines.append(f"\t  jal _PrintInt\t           # jump to function")
+
+            lines.append(f"\t# PopParams 4")
+            lines.append(f"\t  add $sp, $sp, 4\t# pop params off stack")
 
         else:
             print(f"WARNING: Complex PrintStmt argument not handled: {arg}")
+
 
 def emit_relop_expression(expr, context):
     """
@@ -672,15 +720,13 @@ def emit_if_statement(if_node, context):
     tmp_cond = emit_relop_expression(test_expr, context)
 
     # --- 2. Label setup ---
-    if_label = f"_L{context['if_counter']}"
-    end_label = f"_L{context['if_counter'] + 1}"
-    context["if_counter"] += 2
+    label_true, label_false = allocate_label(context)
 
     # --- 3. Conditional branch ---
-    lines.append(f"\t# IfZ {tmp_cond} Goto {if_label}")
+    lines.append(f"\t# IfZ {tmp_cond} Goto {label_true}")
     tmp_offset = context["temp_locations"][tmp_cond]
     lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(tmp_offset)}")
-    lines.append(f"\t  beqz $t0, {if_label}\t# branch if {tmp_cond} is zero")
+    lines.append(f"\t  beqz $t0, {label_true}\t# branch if {tmp_cond} is zero")
 
     # --- 4. THEN block ---
     if then_stmt:
@@ -688,13 +734,13 @@ def emit_if_statement(if_node, context):
 
     # --- 5. Jump over ELSE block ---
     if else_stmt:
-        lines.append(f"\t  j {end_label}")
+        lines.append(f"\t  j {label_false}")
 
     # --- 6. ELSE label ---
-    lines.append(f"  {if_label}:")
+    lines.append(f"  {label_true}:")
     if else_stmt:
         emit_statement(else_stmt, context)
-        lines.append(f"{end_label}:")
+        lines.append(f"{label_false}:")
 
 def emit_relop(left_reg, right_reg, operator, target_reg, lines):
     """
@@ -742,4 +788,42 @@ def emit_load_operand(operand, dest_reg, context, lines):
         return None, None
 
 def emit_for_statement(for_node, context):
-    pass
+    lines = context["lines"]
+
+    init = for_node.get("init")
+    test = for_node.get("test")
+    step = for_node.get("step")
+    body = for_node.get("body")
+
+    # --- 1. Labels
+    label_true, label_false = allocate_label(context)
+
+    # --- 2. Emit initialization (only once)
+    if init:
+        emit_assign_expression(init["AssignExpr"], context)
+
+    # --- 3. Label: Start of loop
+    lines.append(f"  {label_true}:")
+
+    # --- 4. Emit test (conditional jump out)
+    if test:
+        tmp_cond = emit_relop_expression(test, context)
+
+        lines.append(f"\t# IfZ {tmp_cond} Goto {label_false}")
+        lines.append(f"\t  lw $t0, {context['temp_locations'][tmp_cond]}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(context['temp_locations'][tmp_cond])}")
+        lines.append(f"\t  beqz $t0, {label_false}\t# branch if {tmp_cond} is zero")
+
+    # --- 5. Emit body (loop body)
+    if body:
+        emit_statement(body, context)
+
+    # --- 6. Emit step (increment/decrement)
+    if step:
+        emit_assign_expression(step["AssignExpr"], context)
+
+    # --- 7. Jump back to start
+    lines.append(f"\t  j {label_true}")
+
+    # --- 8. Label: End of loop
+    lines.append(f"{label_false}:")
+
