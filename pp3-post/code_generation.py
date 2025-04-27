@@ -618,8 +618,6 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
         if tmp_right_name is None or tmp_right_offset is None:
             tmp_right_name, tmp_right_offset = allocate_temp(context)
 
-
-
         context["constant_temps"].add(tmp_right_name)
 
         lines.append(f"\t# {tmp_right_name} = {right_val}")
@@ -655,6 +653,13 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
         tmp_offset = context["temp_locations"][tmp_relop]
         lines.append(f"\t# PushParam {tmp_relop}")
         emit_push_param(lines, tmp_offset, tmp_relop)
+    
+    elif "LogicalExpr" in arg:
+        tmp_logic = emit_logical_expression(arg, context)
+        tmp_offset = context["temp_locations"][tmp_logic]
+
+        lines.append(f"\t# PushParam {tmp_logic}")
+        emit_push_param(lines, tmp_offset, tmp_logic)
 
     else:
         print(f"WARNING: Complex function call argument not handled: {arg}")
@@ -836,37 +841,91 @@ def emit_relop_expression(expr, context):
 
     return tmp_name
 
-def emit_if_statement(if_node, context):
+def emit_logical_expression(expr, context):
+    """
+    Emits MIPS instructions for a LogicalExpr.
+    Returns temp name holding 0/1 result.
+    """
     lines = context["lines"]
-    test_expr = if_node["test"]
-    then_stmt = if_node.get("then")
-    else_stmt = if_node.get("else")
 
-    # --- 1. Evaluate full relational expression ---
-    tmp_cond = emit_relop_expression(test_expr, context)
+    if "LogicalExpr" not in expr:
+        raise ValueError("emit_logical_expression expected LogicalExpr")
 
-    # --- 2. Label setup ---
-    label_true, label_false = allocate_label(context)
+    logic = expr["LogicalExpr"]
+    op = logic["operator"]
 
-    # --- 3. Conditional branch ---
-    lines.append(f"\t# IfZ {tmp_cond} Goto {label_true}")
-    tmp_offset = context["temp_locations"][tmp_cond]
-    lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(tmp_offset)}")
-    lines.append(f"\t  beqz $t0, {label_true}\t# branch if {tmp_cond} is zero")
+    # Handle 'right' always
+    right_expr = logic["right"]
+    right_tmp = None
 
-    # --- 4. THEN block ---
-    if then_stmt:
-        emit_statement(then_stmt, context)
+    if "LogicalExpr" in right_expr:
+        right_tmp = emit_logical_expression(right_expr, context)
+    elif "RelationalExpr" in right_expr:
+        right_tmp = emit_relop_expression(right_expr, context)
+    elif "BoolConstant" in right_expr:
+        val = 1 if right_expr["BoolConstant"]["value"] == "true" else 0
+        right_tmp, right_offset = allocate_temp(context)
+        lines.append(f"\t# {right_tmp} = {val}")
+        lines.append(f"\t  li $t2, {val}")
+        lines.append(f"\t  sw $t2, {right_offset}($fp)\t# spill {right_tmp}")
+        context["constant_temps"].add(right_tmp)
+        context["temp_locations"][right_tmp] = right_offset
+    else:
+        print(f"WARNING: LogicalExpr right operand not handled yet: {right_expr}")
 
-    # --- 5. Jump over ELSE block ---
-    if else_stmt:
-        lines.append(f"\t  j {label_false}")
+    right_offset = context["temp_locations"][right_tmp]
 
-    # --- 6. ELSE label ---
-    lines.append(f"  {label_true}:")
-    if else_stmt:
-        emit_statement(else_stmt, context)
-        lines.append(f"{label_false}:")
+    # If binary op (&& or ||)
+    if op in ("&&", "||"):
+        left_expr = logic["left"]
+        left_tmp = None
+
+        if "LogicalExpr" in left_expr:
+            left_tmp = emit_logical_expression(left_expr, context)
+        elif "RelationalExpr" in left_expr:
+            left_tmp = emit_relop_expression(left_expr, context)
+        elif "BoolConstant" in left_expr:
+            val = 1 if left_expr["BoolConstant"]["value"] == "true" else 0
+            left_tmp, left_offset = allocate_temp(context)
+            lines.append(f"\t# {left_tmp} = {val}")
+            lines.append(f"\t  li $t2, {val}")
+            lines.append(f"\t  sw $t2, {left_offset}($fp)\t# spill {left_tmp}")
+            context["constant_temps"].add(left_tmp)
+            context["temp_locations"][left_tmp] = left_offset
+        else:
+            print(f"WARNING: LogicalExpr left operand not handled yet: {left_expr}")
+
+        left_offset = context["temp_locations"][left_tmp]
+
+        result_tmp, result_offset = allocate_temp(context)
+        lines.append(f"\t# {result_tmp} = {left_tmp} {op} {right_tmp}")
+        lines.append(f"\t  lw $t0, {left_offset}($fp)")
+        lines.append(f"\t  lw $t1, {right_offset}($fp)")
+
+        if op == "&&":
+            lines.append(f"\t  and $t2, $t0, $t1")
+        elif op == "||":
+            lines.append(f"\t  or $t2, $t0, $t1")
+
+        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp}")
+        context["temp_locations"][result_tmp] = result_offset
+        return result_tmp
+
+    # If unary op (!)
+    elif op == "!":
+        result_tmp, result_offset = allocate_temp(context)
+        lines.append(f"\t# {result_tmp} = !{right_tmp}")
+        lines.append(f"\t  lw $t0, {right_offset}($fp)")
+
+        # Manual NOT: 
+        #  if t0 == 0 -> 1, else 0
+        lines.append(f"\t  seqz $t2, $t0\t# NOT operation")
+        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp}")
+        context["temp_locations"][result_tmp] = result_offset
+        return result_tmp
+
+    else:
+        raise ValueError(f"Unsupported LogicalExpr operator: {op}")
 
 def emit_relop(left_reg, right_reg, operator, target_reg, lines):
     """
@@ -913,6 +972,48 @@ def emit_load_operand(operand, dest_reg, context, lines):
         print(f"WARNING: Unsupported operand type in emit_load_operand: {operand}")
         return None, None
 
+def emit_if_statement(if_node, context):
+    lines = context["lines"]
+    test_expr = if_node["test"]
+    then_stmt = if_node.get("then")
+    else_stmt = if_node.get("else")
+
+    # --- 1. Evaluate the condition ---
+    if "RelationalExpr" in test_expr:
+        tmp_cond = emit_relop_expression(test_expr, context)
+        tmp_offset = context["temp_locations"][tmp_cond]
+    elif "LogicalExpr" in test_expr:
+        tmp_cond = emit_logical_expression(test_expr, context)
+        tmp_offset = context["temp_locations"][tmp_cond]
+    elif "FieldAccess" in test_expr:
+        var = test_expr["FieldAccess"]["identifier"]
+        tmp_cond = var
+        tmp_offset = context["var_locations"].get(var, -4)
+    else:
+        raise ValueError(f"Unsupported if test expression: {test_expr}")
+
+    # --- 2. Label setup ---
+    label_true, label_false = allocate_label(context)
+
+    # --- 3. Conditional branch ---
+    lines.append(f"\t# IfZ {tmp_cond} Goto {label_true}")
+    lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(tmp_offset)}")
+    lines.append(f"\t  beqz $t0, {label_true}\t# branch if {tmp_cond} is zero")
+
+    # --- 4. THEN block ---
+    if then_stmt:
+        emit_statement(then_stmt, context)
+
+    # --- 5. Jump over ELSE block ---
+    if else_stmt:
+        lines.append(f"\t  j {label_false}")
+
+    # --- 6. ELSE label ---
+    lines.append(f"  {label_true}:")
+    if else_stmt:
+        emit_statement(else_stmt, context)
+        lines.append(f"{label_false}:")
+
 def emit_for_statement(for_node, context):
     lines = context["lines"]
 
@@ -933,10 +1034,21 @@ def emit_for_statement(for_node, context):
 
     # --- 4. Emit test (conditional jump out)
     if test:
-        tmp_cond = emit_relop_expression(test, context)
+        if "RelationalExpr" in test:
+            tmp_cond = emit_relop_expression(test, context)
+            tmp_offset = context["temp_locations"][tmp_cond]
+        elif "LogicalExpr" in test:
+            tmp_cond = emit_logical_expression(test, context)
+            tmp_offset = context["temp_locations"][tmp_cond]
+        elif "FieldAccess" in test:
+            var = test["FieldAccess"]["identifier"]
+            tmp_cond = var
+            tmp_offset = context["var_locations"].get(var, -4)
+        else:
+            raise ValueError(f"Unsupported for loop test expression: {test}")
 
         lines.append(f"\t# IfZ {tmp_cond} Goto {label_false}")
-        lines.append(f"\t  lw $t0, {context['temp_locations'][tmp_cond]}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(context['temp_locations'][tmp_cond])}")
+        lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(tmp_offset)}")
         lines.append(f"\t  beqz $t0, {label_false}\t# branch if {tmp_cond} is zero")
 
     old_break_label = context.get("break_label")
@@ -950,7 +1062,6 @@ def emit_for_statement(for_node, context):
 
     context["break_label"] = old_break_label
     context["continue_label"] = old_continue_label
-
 
     # --- 6. Emit step (correct handling for n = n + 1)
     if step:
@@ -980,13 +1091,25 @@ def emit_while_statement(while_node, context):
     # --- 2. Label: Start of loop
     lines.append(f"  {label_true}:")
 
-    # --- 3. Emit test (conditional jump out)
+    # --- 3. Emit test (conditional branch)
     if test:
-        tmp_cond = emit_relop_expression(test, context)
+        if "RelationalExpr" in test:
+            tmp_cond = emit_relop_expression(test, context)
+            tmp_offset = context["temp_locations"][tmp_cond]
+        elif "LogicalExpr" in test:
+            tmp_cond = emit_logical_expression(test, context)
+            tmp_offset = context["temp_locations"][tmp_cond]
+        elif "FieldAccess" in test:
+            var = test["FieldAccess"]["identifier"]
+            tmp_cond = var
+            tmp_offset = context["var_locations"].get(var, -4)
+        else:
+            raise ValueError(f"Unsupported while test expression: {test}")
 
         lines.append(f"\t# IfZ {tmp_cond} Goto {label_false}")
-        lines.append(f"\t  lw $t0, {context['temp_locations'][tmp_cond]}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(context['temp_locations'][tmp_cond])}")
+        lines.append(f"\t  lw $t0, {tmp_offset}($fp)\t# fill {tmp_cond} to $t0 from $fp{format_offset(tmp_offset)}")
         lines.append(f"\t  beqz $t0, {label_false}\t# branch if {tmp_cond} is zero")
+
 
     old_break_label = context.get("break_label")
     old_continue_label = context.get("continue_label")
@@ -1000,7 +1123,6 @@ def emit_while_statement(while_node, context):
     # --- Restore previous break/continue labels
     context["break_label"] = old_break_label
     context["continue_label"] = old_continue_label
-
 
     # --- 5. Jump back to start
     lines.append(f"\t# Goto {label_true}")
