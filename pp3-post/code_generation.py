@@ -849,27 +849,43 @@ def emit_relop(left_reg, right_reg, operator, target_reg, lines):
     else:
         print(f"WARNING: Unsupported relational operator: {operator}")
 
-def emit_load_operand(operand, dest_reg, context, lines):
+def emit_load_operand(operand, dest_reg, context, lines=None):
     """
-    Emits MIPS instructions to load an operand (FieldAccess, IntConstant, BoolConstant) into dest_reg.
-    Also returns (var_name, var_offset) if FieldAccess, otherwise (value, None).
+    Emits MIPS instructions to load an operand (FieldAccess, IntConstant, BoolConstant) into dest_reg,
+    only if `lines` is provided. Otherwise just returns the (var_name, var_offset) without emitting.
     """
 
     if "FieldAccess" in operand:
         var_name = operand["FieldAccess"]["identifier"]
         offset = context["var_locations"].get(var_name, 4)   # ✅ default positive 4
-        lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{format_offset(offset)}")
+
+        if lines is not None and dest_reg is not None:
+            lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{format_offset(offset)}")
+
         return var_name, offset
 
     elif "IntConstant" in operand:
         val = int(operand["IntConstant"]["value"])
-        lines.append(f"\t  li {dest_reg}, {val}\t# load int constant {val} into {dest_reg}")
+
+        if lines is not None and dest_reg is not None:
+            lines.append(f"\t  li {dest_reg}, {val}\t# load int constant {val} into {dest_reg}")
+
         return val, None
 
     elif "BoolConstant" in operand:
         val = 1 if operand["BoolConstant"]["value"] == "true" else 0
-        lines.append(f"\t  li {dest_reg}, {val}\t# load bool constant {val} into {dest_reg}")
+
+        if lines is not None and dest_reg is not None:
+            lines.append(f"\t  li {dest_reg}, {val}\t# load bool constant {val} into {dest_reg}")
+
         return val, None
+    
+    elif "Call" in operand:
+        # Recursive function call inside an expression
+        tmp_call_name, tmp_call_offset = emit_function_call(operand["Call"], context=context)
+        if lines is not None and dest_reg is not None:
+            lines.append(f"\t  lw {dest_reg}, {tmp_call_offset}($fp)\t# fill {tmp_call_name} to {dest_reg} from $fp{format_offset(tmp_call_offset)}")
+        return tmp_call_name, tmp_call_offset
 
     else:
         print(f"WARNING: Unsupported operand type in emit_load_operand: {operand}")
@@ -909,7 +925,8 @@ def emit_if_statement(if_node, context):
 
     # --- 5. Jump over ELSE block ---
     if else_stmt:
-        lines.append(f"\t  j {label_false}")
+        lines.append(f"    # Goto {label_false}")
+        lines.append(f"\t  b {label_false}\t    # unconditional branch")
 
     # --- 6. ELSE label ---
     lines.append(f"  {label_true}:")
@@ -1060,11 +1077,10 @@ def emit_continue_statement(context):
     lines.append(f"\t# Continue: jump to {context['continue_label']}")
     lines.append(f"\t  b {context['continue_label']}\t    # continue jumps to start of loop")
 
-def emit_return_statement(return_stmt, context):
+def old_emit_return_statement(return_stmt, context):
     lines = context["lines"]
     expr = return_stmt["expr"]
 
-    # --- NEW CASE: Direct return of a constant (like return 1;) ---
     if "IntConstant" in expr:
         value = int(expr["IntConstant"]["value"])
         tmp_name, tmp_offset = allocate_temp(context)
@@ -1155,3 +1171,73 @@ def emit_return_statement(return_stmt, context):
 
         # --- Inline epilogue ---
         lines.extend(emit_epilogue_lines(add_end_comment=False))
+
+def emit_return_statement(return_stmt, context):
+    lines = context["lines"]
+    expr = return_stmt["expr"]
+
+    # --- CASE 1: Return an IntConstant directly ---
+    if "IntConstant" in expr:
+        value = int(expr["IntConstant"]["value"])
+        tmp_name, tmp_offset = allocate_temp(context)
+
+        lines.append(f"\t# {tmp_name} = {value}")
+        lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+
+        lines.append(f"\t# Return {tmp_name}")
+        lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
+        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
+
+        lines.extend(emit_epilogue_lines(add_end_comment=False))
+        return
+
+    # --- CASE 2: Return an ArithmeticExpr (like a + 2) ---
+    if "ArithmeticExpr" in expr:
+        arith = expr["ArithmeticExpr"]
+        left = arith["left"]
+        right = arith["right"]
+        op = arith["operator"]
+
+        # === Step 1: Handle right operand ===
+        right_var, right_offset = emit_load_operand(right, None, context)  # no emission
+
+        if right_offset is None:
+            # It's a constant, we need to allocate and spill
+            right_tmp, right_tmp_offset = allocate_temp(context)
+            lines.append(f"\t# {right_tmp} = {right_var}")
+            lines.append(f"\t  li $t2, {right_var}\t    # load constant value {right_var} into $t2")
+            lines.append(f"\t  sw $t2, {right_tmp_offset}($fp)\t# spill {right_tmp} from $t2 to $fp{format_offset(right_tmp_offset)}")
+            right_var = right_tmp
+            right_offset = right_tmp_offset
+
+        # === Step 2: Handle left operand ===
+        left_var, left_offset = emit_load_operand(left, None, context)  # no emission
+
+        # === Step 3: Allocate result temp ===
+        result_tmp, result_offset = allocate_temp(context)
+
+        lines.append(f"\t# {result_tmp} = {left_var} {op} {right_var}")
+        lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
+        lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
+
+        if op == "+":
+            lines.append(f"\t  add $t2, $t0, $t1")
+        elif op == "-":
+            lines.append(f"\t  sub $t2, $t0, $t1")
+        elif op == "*":
+            lines.append(f"\t  mul $t2, $t0, $t1")
+        elif op == "/":
+            lines.append(f"\t  div $t2, $t0, $t1")
+        else:
+            lines.append(f"\t  # unsupported operator: {op}")
+
+        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp} from $t2 to $fp{format_offset(result_offset)}")
+
+        # === Step 4: Return result ===
+        lines.append(f"\t# Return {result_tmp}")
+        lines.append(f"\t  lw $t2, {result_offset}($fp)\t# fill {result_tmp} to $t2 from $fp{format_offset(result_offset)}")
+        lines.append(f"\t  move $v0, $t2\t# assign return value into $v0")
+
+        lines.extend(emit_epilogue_lines(add_end_comment=False))
+        return
