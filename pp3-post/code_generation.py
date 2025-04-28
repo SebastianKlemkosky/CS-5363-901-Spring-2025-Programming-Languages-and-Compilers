@@ -790,7 +790,6 @@ def emit_load_operand(operand, dest_reg, context, lines=None):
         print(f"WARNING: Unsupported operand type in emit_load_operand: {operand}")
         return None, None
 
-
 def emit_if_statement(if_node, context):
     lines = context["lines"]
     test_expr = if_node["test"]
