@@ -761,11 +761,7 @@ def emit_load_operand(operand, dest_reg, context, lines=None):
         offset = context["var_locations"].get(var_name, -4)  # Default local offset is -4
 
         if lines is not None and dest_reg is not None:
-            if offset >= 0:
-                lines.append(f"\t  lw {dest_reg}, {offset}($gp)\t# fill {var_name} to {dest_reg} from $gp+{offset}")
-            else:
-                lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{offset}")
-
+            lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{offset}")
         return var_name, offset
 
     elif "IntConstant" in operand:
