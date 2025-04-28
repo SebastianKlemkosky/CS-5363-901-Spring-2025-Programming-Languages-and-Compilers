@@ -283,7 +283,6 @@ def allocate_temp(context):
 
     return tmp_name, tmp_offset
 
-
 def get_print_function_for_type(var_type):
     """
     Maps a Decaf type to the corresponding _Print* function.
