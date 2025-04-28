@@ -236,7 +236,7 @@ def emit_assign_expression(assign_node, context):
 
             lines.append(f"\t# {tmp_const_name} = {const_val}")
             lines.append(f"\t  li $t2, {const_val}\t    # load constant value {const_val} into $t2")
-            lines.append(f"\t  sw $t2, {tmp_const_offset}($fp)\t# spill {tmp_const_name} to $fp{format_offset(tmp_const_offset)}")
+            lines.append(f"\t  sw $t2, {tmp_const_offset}($fp)\t# spill {tmp_const_name} from $t2 to $fp{format_offset(tmp_const_offset)}")
 
             tmp_result_name, tmp_result_offset = allocate_temp(context)
             lines.append(f"\t# {tmp_result_name} = {left['FieldAccess']['identifier']} {op} {tmp_const_name}")
@@ -255,7 +255,7 @@ def emit_assign_expression(assign_node, context):
             else:
                 lines.append(f"\t  # unsupported operator {op}")
 
-            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} to $fp{format_offset(tmp_result_offset)}")
+            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} from $t2 to $fp{format_offset(tmp_result_offset)}")
 
         else:
             left_var, left_offset = emit_load_operand(left, "$t0", context, lines)
@@ -275,7 +275,7 @@ def emit_assign_expression(assign_node, context):
             else:
                 lines.append(f"\t  # unsupported operator {op}")
 
-            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} to $fp{format_offset(tmp_result_offset)}")
+            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} from $fp{format_offset(tmp_result_offset)}")
 
         lines.append(f"\t# {target} = {tmp_result_name}")
         lines.append(f"\t  lw $t2, {tmp_result_offset}($fp)\t# fill {tmp_result_name} to $t2 from $fp{format_offset(tmp_result_offset)}")
@@ -423,9 +423,9 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
 
         lines.append(f"\t# {tmp_name} = {value}")
         lines.append(f"\t  li $t2, {value}\t# load const {value}")
-        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name}")
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
         emit_push_param(lines, tmp_offset, tmp_name)
-
+    #TODO: Start here and fix our mips
     elif "BoolConstant" in arg:
         value = arg["BoolConstant"]["value"]
         bool_val = 1 if value == "true" else 0
@@ -433,8 +433,8 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
         context["constant_temps"].add(tmp_name)
 
         lines.append(f"\t# {tmp_name} = {bool_val}")
-        lines.append(f"\t  li $t2, {bool_val}\t# load bool const {bool_val}")
-        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name}")
+        lines.append(f"\t  li $t2, {bool_val}\t    # load constant value {bool_val} into $t2")
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
         emit_push_param(lines, tmp_offset, tmp_name)
 
     elif "ArithmeticExpr" in arg:
