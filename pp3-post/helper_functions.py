@@ -340,3 +340,18 @@ def allocate_label(context):
     label_false = f"_L{context['label_counter']+1}"
     context["label_counter"] += 1
     return label_true, label_false
+
+def emit_store(var_name, from_reg, context, lines):
+    """
+    Emits a store instruction for a variable (global or local), handling $gp and $fp properly.
+    """
+    if var_name in context.get("globals", set()):
+        # Global: use recorded offset from $gp
+        gp_offset = context["global_locations"].get(var_name, 0)
+        comment_offset = f"+{gp_offset}" if gp_offset >= 0 else f"{gp_offset}"
+        lines.append(f"\t  sw {from_reg}, {gp_offset}($gp)\t# spill {var_name} from {from_reg} to $gp{comment_offset}")
+    else:
+        # Local: use frame pointer offset
+        fp_offset = context["var_locations"].get(var_name, -4)
+        comment_offset = f"+{fp_offset}" if fp_offset >= 0 else f"{fp_offset}"
+        lines.append(f"\t  sw {from_reg}, {fp_offset}($fp)\t# spill {var_name} from {from_reg} to $fp{comment_offset}")

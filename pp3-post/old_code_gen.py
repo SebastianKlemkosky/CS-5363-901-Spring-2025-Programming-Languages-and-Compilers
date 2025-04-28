@@ -1,5 +1,5 @@
 # code_generation.py
-from helper_functions import calculate_frame_size, allocate_temp, get_print_function_for_type, get_var_type, format_relop_comment, format_offset, allocate_label, emit_store
+from helper_functions import calculate_frame_size, allocate_temp, get_print_function_for_type, get_var_type, format_relop_comment, format_offset, allocate_label
 
 def generate_code(ast_root):
     lines = []
@@ -9,30 +9,19 @@ def generate_code(ast_root):
                for node in ast_root["Program"]):
         return "*** Error.\n*** Linker: function 'main' not defined"
 
-    # Step 1: Scan and remember global variables
-    global_locations = {}
-    global_offset = 0
-    for node in ast_root["Program"]:
-        if "VarDecl" in node:
-            var_decl = node["VarDecl"]
-            var_name = var_decl["identifier"]["Identifier"]["name"]
-            global_locations[var_name] = global_offset
-            global_offset += 4
-
-
-    # Step 2: Emit preamble for text section (NO .data)
+    # Step 1: Emit preamble
     lines.append("\t# standard Decaf preamble ")
     lines.append("\t  .text")
     lines.append("\t  .align 2")
     lines.append("\t  .globl main")
 
-    # Step 3: Emit functions with a shared temp counter
+    # Step 2: Emit functions with a shared temp counter
     temp_counter = 0
     label_counter = 0
     for node in ast_root["Program"]:
         if "FnDecl" in node:
             fn_decl = node["FnDecl"]
-            fn_lines, temp_counter, label_counter = emit_function(fn_decl, temp_counter, label_counter, global_locations)
+            fn_lines, temp_counter, label_counter = emit_function(fn_decl, temp_counter, label_counter)
             lines.extend(fn_lines)
 
     return "\n".join(lines) + "\n"
@@ -74,26 +63,18 @@ def emit_epilogue_lines(add_end_comment=True):
 
     return lines
 
-def emit_push_param(lines, offset, var_name=None, is_global=False):
+def emit_push_param(lines, offset, var_name=None):
     """
     Emits MIPS instructions to push a variable or constant onto the stack.
-    Handles whether it's a global or local based on is_global flag.
     """
     lines.append("\t  subu $sp, $sp, 4\t# decrement sp to make space for param")
     if var_name:
-        if is_global:
-            comment_offset = f"+{offset}" if offset >= 0 else f"{offset}"
-            lines.append(f"\t  lw $t0, {offset}($gp)\t# fill {var_name} to $t0 from $gp{comment_offset}")
-        else:
-            comment_offset = f"+{offset}" if offset >= 0 else f"{offset}"
-            lines.append(f"\t  lw $t0, {offset}($fp)\t# fill {var_name} to $t0 from $fp{comment_offset}")
+        lines.append(f"\t  lw $t0, {offset}($fp)\t# fill {var_name} to $t0 from $fp{offset}")
     else:
-        comment_offset = f"+{offset}" if offset >= 0 else f"{offset}"
-        lines.append(f"\t  lw $t0, {offset}($fp)\t# fill temp to $t0 from $fp{comment_offset}")
-    
+        lines.append(f"\t  lw $t0, {offset}($fp)\t# fill temp to $t0 from $fp{offset}")
     lines.append("\t  sw $t0, 4($sp)\t# copy param value to stack")
 
-def emit_function(fn_decl, temp_counter, label_counter, global_locations):
+def emit_function(fn_decl, temp_counter, label_counter):
     fn_name = fn_decl["identifier"]["Identifier"]["name"]
 
     # Create context for this function
@@ -107,9 +88,8 @@ def emit_function(fn_decl, temp_counter, label_counter, global_locations):
         "temp_counter": temp_counter,
         "offset": -8,  # locals grow downward
         "lines": [],
-        "label_counter": label_counter,
-        "globals": set(global_locations.keys()),  # ✅ all global names
-        "global_locations": global_locations,     # ✅ all global offsets
+        "label_counter": label_counter
+
     }
 
     # --- Handle function parameters ---
@@ -184,7 +164,6 @@ def emit_vardecl(vardecl_node, context):
     lines = context["lines"]
     var_name = vardecl_node["identifier"]
     var_type = vardecl_node["type"]
-    print(f"DEBUG: Declaring variable '{var_name}' of type '{var_type}' inside {context.get('current_function', '???')}")
 
     # Assign space in frame
     offset = context["offset"]
@@ -212,9 +191,11 @@ def emit_assign_expression(assign_node, context):
         lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
         lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
+        target_offset = context["var_locations"].get(target, -4)
+        
         lines.append(f"\t# {target} = {tmp_name}")
         lines.append(f"\t  lw $t2, {tmp_offset}($fp)\t# fill {tmp_name} to $t2 from $fp{format_offset(tmp_offset)}")
-        emit_store(target, "$t2", context, lines)
+        lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
 
     elif "StringConstant" in value:
         emit_assign_string_constant(assign_node, context)
@@ -228,6 +209,7 @@ def emit_assign_expression(assign_node, context):
         right = arith["right"]
         op = arith["operator"]
 
+        # --- FIRST: handle right if constant (special case for step like n = n + 1)
         right_is_const = "IntConstant" in right
 
         if right_is_const:
@@ -236,7 +218,7 @@ def emit_assign_expression(assign_node, context):
 
             lines.append(f"\t# {tmp_const_name} = {const_val}")
             lines.append(f"\t  li $t2, {const_val}\t    # load constant value {const_val} into $t2")
-            lines.append(f"\t  sw $t2, {tmp_const_offset}($fp)\t# spill {tmp_const_name} to $fp{format_offset(tmp_const_offset)}")
+            lines.append(f"\t  sw $t2, {tmp_const_offset}($fp)\t# spill {tmp_const_name} from $t2 to $fp{format_offset(tmp_const_offset)}")
 
             tmp_result_name, tmp_result_offset = allocate_temp(context)
             lines.append(f"\t# {tmp_result_name} = {left['FieldAccess']['identifier']} {op} {tmp_const_name}")
@@ -255,9 +237,10 @@ def emit_assign_expression(assign_node, context):
             else:
                 lines.append(f"\t  # unsupported operator {op}")
 
-            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} to $fp{format_offset(tmp_result_offset)}")
+            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} from $t2 to $fp{format_offset(tmp_result_offset)}")
 
         else:
+            # --- NORMAL case (both are vars, no extra temp for constant needed)
             left_var, left_offset = emit_load_operand(left, "$t0", context, lines)
             right_var, right_offset = emit_load_operand(right, "$t1", context, lines)
 
@@ -275,27 +258,22 @@ def emit_assign_expression(assign_node, context):
             else:
                 lines.append(f"\t  # unsupported operator {op}")
 
-            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} to $fp{format_offset(tmp_result_offset)}")
+            lines.append(f"\t  sw $t2, {tmp_result_offset}($fp)\t# spill {tmp_result_name} from $t2 to $fp{format_offset(tmp_result_offset)}")
 
+        # --- assign temp into target
+        target_offset = context["var_locations"].get(target, -4)
         lines.append(f"\t# {target} = {tmp_result_name}")
         lines.append(f"\t  lw $t2, {tmp_result_offset}($fp)\t# fill {tmp_result_name} to $t2 from $fp{format_offset(tmp_result_offset)}")
-        emit_store(target, "$t2", context, lines)
+        lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
 
     elif "FieldAccess" in value:
         source_var = value["FieldAccess"]["identifier"]
+        source_offset = context["var_locations"].get(source_var, -4)
+        target_offset = context["var_locations"].get(target, -4)
 
         lines.append(f"\t# {target} = {source_var}")
-        if source_var in context.get("globals", set()):
-            gp_offset = context["global_locations"].get(source_var, 0)
-            comment_offset = f"+{gp_offset}" if gp_offset >= 0 else f"{gp_offset}"
-            lines.append(f"\t  lw $t2, {gp_offset}($gp)\t# fill {source_var} to $t2 from $gp{comment_offset}")
-        else:
-            source_offset = context["var_locations"].get(source_var, -4)
-            comment_offset = f"+{source_offset}" if source_offset >= 0 else f"{source_offset}"
-            lines.append(f"\t  lw $t2, {source_offset}($fp)\t# fill {source_var} to $t2 from $fp{comment_offset}")
-
-        emit_store(target, "$t2", context, lines)
-
+        lines.append(f"\t  lw $t2, {source_offset}($fp)\t# fill {source_var} to $t2 from $fp{format_offset(source_offset)}")
+        lines.append(f"\t  sw $t2, {target_offset}($fp)\t# spill {target} from $t2 to $fp{format_offset(target_offset)}")
 
     else:
         print(f"WARNING: Unhandled assignment value: {value}")
@@ -406,15 +384,10 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
 
     if "FieldAccess" in arg:
         var = arg["FieldAccess"]["identifier"]
+        var_offset = context["var_locations"].get(var, -4)
 
         lines.append(f"\t# PushParam {var}")
-
-        if var in context.get("globals", set()):
-            var_offset = context["global_locations"].get(var, 0)
-            emit_push_param(lines, var_offset, var_name=var, is_global=True)
-        else:
-            var_offset = context["var_locations"].get(var, -4)
-            emit_push_param(lines, var_offset, var_name=var, is_global=False)
+        emit_push_param(lines, var_offset, var)
 
     elif "IntConstant" in arg:
         value = int(arg["IntConstant"]["value"])
@@ -785,21 +758,11 @@ def emit_load_operand(operand, dest_reg, context, lines=None):
 
     if "FieldAccess" in operand:
         var_name = operand["FieldAccess"]["identifier"]
+        offset = context["var_locations"].get(var_name, -4)  # Default local offset is -4
 
-        if var_name in context.get("globals", set()):
-            # Global variable: load from $gp + offset
-            gp_offset = context["global_locations"].get(var_name, 0)
-            if lines is not None and dest_reg is not None:
-                comment_offset = f"+{gp_offset}" if gp_offset >= 0 else f"{gp_offset}"
-                lines.append(f"\t  lw {dest_reg}, {gp_offset}($gp)\t# fill {var_name} to {dest_reg} from $gp{comment_offset}")
-            return var_name, gp_offset
-        else:
-            # Local variable: load from $fp + offset
-            offset = context["var_locations"].get(var_name, -4)
-            if lines is not None and dest_reg is not None:
-                comment_offset = f"+{offset}" if offset >= 0 else f"{offset}"
-                lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{comment_offset}")
-            return var_name, offset
+        if lines is not None and dest_reg is not None:
+            lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{offset}")
+        return var_name, offset
 
     elif "IntConstant" in operand:
         val = int(operand["IntConstant"]["value"])
@@ -816,7 +779,7 @@ def emit_load_operand(operand, dest_reg, context, lines=None):
     elif "Call" in operand:
         tmp_call_name, tmp_call_offset = emit_function_call(operand["Call"], context=context)
         if lines is not None and dest_reg is not None:
-            lines.append(f"\t  lw {dest_reg}, {tmp_call_offset}($fp)\t# fill {tmp_call_name} to {dest_reg} from $fp{format_offset(tmp_call_offset)}")
+            lines.append(f"\t  lw {dest_reg}, {tmp_call_offset}($fp)\t# fill {tmp_call_name} to {dest_reg} from $fp{tmp_call_offset}")
         return tmp_call_name, tmp_call_offset
 
     else:
@@ -1055,26 +1018,9 @@ def emit_return_statement(return_stmt, context):
         result_tmp, result_offset = allocate_temp(context)
 
         lines.append(f"\t# {result_tmp} = {left_var} {op} {right_var}")
+        lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
+        lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
 
-        # === Step 4: Load left operand ===
-        if left_var in context.get("globals", set()):
-            left_gp_offset = context["global_locations"].get(left_var, 0)
-            comment_offset = f"+{left_gp_offset}" if left_gp_offset >= 0 else f"{left_gp_offset}"
-            lines.append(f"\t  lw $t0, {left_gp_offset}($gp)\t# fill {left_var} to $t0 from $gp{comment_offset}")
-        else:
-            comment_offset = f"+{left_offset}" if left_offset >= 0 else f"{left_offset}"
-            lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{comment_offset}")
-
-        # === Step 5: Load right operand ===
-        if right_var in context.get("globals", set()):
-            right_gp_offset = context["global_locations"].get(right_var, 0)
-            comment_offset = f"+{right_gp_offset}" if right_gp_offset >= 0 else f"{right_gp_offset}"
-            lines.append(f"\t  lw $t1, {right_gp_offset}($gp)\t# fill {right_var} to $t1 from $gp{comment_offset}")
-        else:
-            comment_offset = f"+{right_offset}" if right_offset >= 0 else f"{right_offset}"
-            lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{comment_offset}")
-
-        # === Step 6: Perform operation ===
         if op == "+":
             lines.append(f"\t  add $t2, $t0, $t1")
         elif op == "-":
@@ -1086,14 +1032,12 @@ def emit_return_statement(return_stmt, context):
         else:
             lines.append(f"\t  # unsupported operator: {op}")
 
-        # === Step 7: Spill result to frame ===
         lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp} from $t2 to $fp{format_offset(result_offset)}")
 
-        # === Step 8: Return result ===
+        # === Step 4: Return result ===
         lines.append(f"\t# Return {result_tmp}")
         lines.append(f"\t  lw $t2, {result_offset}($fp)\t# fill {result_tmp} to $t2 from $fp{format_offset(result_offset)}")
         lines.append(f"\t  move $v0, $t2\t# assign return value into $v0")
 
         lines.extend(emit_epilogue_lines(add_end_comment=False))
         return
-
