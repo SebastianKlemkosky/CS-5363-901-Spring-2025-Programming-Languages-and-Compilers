@@ -58,6 +58,5 @@ def main():
     print(f"Saved output to: {output_path}")
     print(f"Saved QtSPIM-ready file to: {combined_path}")
 
-
 if __name__ == "__main__":
     main()
