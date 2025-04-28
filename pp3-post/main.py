@@ -28,7 +28,7 @@ def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
         out_file.write(combined)
 
 def main():
-    file_path = r"pp3-post\samples\t4.decaf"
+    file_path = r"pp3-post\samples\t3.decaf"
     output_path = r"pp3-post\output.s"
     combined_path = r"pp3-post\final.s"  # for SPIM
 

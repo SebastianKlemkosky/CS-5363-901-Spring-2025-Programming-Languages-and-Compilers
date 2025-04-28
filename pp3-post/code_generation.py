@@ -758,13 +758,13 @@ def emit_load_operand(operand, dest_reg, context, lines=None):
 
     if "FieldAccess" in operand:
         var_name = operand["FieldAccess"]["identifier"]
-        offset = context["var_locations"].get(var_name, 4)
+        offset = context["var_locations"].get(var_name, -4)  # Default local offset is -4
 
         if lines is not None and dest_reg is not None:
             if offset >= 0:
-                lines.append(f"\t  lw {dest_reg}, {offset}($gp)\t# fill {var_name} to {dest_reg} from $gp{format_offset(offset)}")
+                lines.append(f"\t  lw {dest_reg}, {offset}($gp)\t# fill {var_name} to {dest_reg} from $gp+{offset}")
             else:
-                lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{format_offset(offset)}")
+                lines.append(f"\t  lw {dest_reg}, {offset}($fp)\t# fill {var_name} to {dest_reg} from $fp{offset}")
 
         return var_name, offset
 
@@ -783,12 +783,13 @@ def emit_load_operand(operand, dest_reg, context, lines=None):
     elif "Call" in operand:
         tmp_call_name, tmp_call_offset = emit_function_call(operand["Call"], context=context)
         if lines is not None and dest_reg is not None:
-            lines.append(f"\t  lw {dest_reg}, {tmp_call_offset}($fp)\t# fill {tmp_call_name} to {dest_reg} from $fp{format_offset(tmp_call_offset)}")
+            lines.append(f"\t  lw {dest_reg}, {tmp_call_offset}($fp)\t# fill {tmp_call_name} to {dest_reg} from $fp{tmp_call_offset}")
         return tmp_call_name, tmp_call_offset
 
     else:
         print(f"WARNING: Unsupported operand type in emit_load_operand: {operand}")
         return None, None
+
 
 def emit_if_statement(if_node, context):
     lines = context["lines"]
