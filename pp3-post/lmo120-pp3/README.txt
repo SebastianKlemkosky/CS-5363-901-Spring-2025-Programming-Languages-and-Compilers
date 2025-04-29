@@ -47,12 +47,14 @@ Run the following command in the terminal:
 
 Example:
 To analyze a file named t1.decaf located in the samples directory, run:
+
 ./workdir/exec.sh samples/t1.decaf > output.s
 
-Concatenate the standard Decaf preamble (defs.asm) with your output into a final file final.s 
-that can be loaded in SPIM or QtSPIM.
+Then concatenate the standard Decaf preamble (defs.asm) with your output into a final file final.s 
 
 cat defs.asm output.s > final.s
+
+Use this file to be loaded in SPIM or QtSPIM.
 
 5. Expected Output:
 	# standard Decaf preamble 

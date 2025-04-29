@@ -10,10 +10,6 @@ import pprint
 import argparse
 import os
 
-#TODO: 
-# Try to use our spim from our pp3 to see if we need
-#  Loaded: /usr/share/spim/exceptions.s
-# Do this tomorrow at work
 
 def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
     """
