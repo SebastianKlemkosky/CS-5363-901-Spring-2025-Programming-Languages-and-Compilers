@@ -79,6 +79,9 @@ def emit_push_param(lines, offset, var_name=None, is_global=False):
     Emits MIPS instructions to push a variable or constant onto the stack.
     Handles whether it's a global or local based on is_global flag.
     """
+    if var_name:
+        lines.append(f"\t# PushParam {var_name}")
+
     lines.append("\t  subu $sp, $sp, 4\t# decrement sp to make space for param")
     if var_name:
         if is_global:
@@ -122,7 +125,11 @@ def emit_function(fn_decl, temp_counter, label_counter, global_locations):
             context["var_locations"][formal_name] = formal_offset
             context["var_types"][formal_name] = formal_type
 
+            # ✅ Remove formal name from globals if present
+            context["globals"].discard(formal_name)
+
             formal_offset += 4  # next parameter at +4 bytes higher
+
 
     # --- Walk and emit all body statements ---
     body = fn_decl.get("body", {})
@@ -184,7 +191,7 @@ def emit_vardecl(vardecl_node, context):
     lines = context["lines"]
     var_name = vardecl_node["identifier"]
     var_type = vardecl_node["type"]
-    print(f"DEBUG: Declaring variable '{var_name}' of type '{var_type}' inside {context.get('current_function', '???')}")
+    #print(f"DEBUG: Declaring variable '{var_name}' of type '{var_type}' inside {context.get('current_function', '???')}")
 
     # Assign space in frame
     offset = context["offset"]
@@ -355,7 +362,7 @@ def emit_assign_call(assign_expr, context):
 
     # Step 2: Push parameters in reverse order
     for tmp_name, tmp_offset in reversed(tmp_args):
-        lines.append(f"\t# PushParam {tmp_name}")
+        #lines.append(f"\t# PushParam {tmp_name}")
         emit_push_param(lines, tmp_offset, tmp_name)
 
     # Step 3: Call the function and assign to a new temp
@@ -390,7 +397,7 @@ def emit_function_call(call_node, tmp_name=None, tmp_offset=None, context=None, 
     tmp_name, tmp_offset = allocate_temp(context)
 
     lines.append(f"\t# {tmp_name} = LCall _{func_name}")
-    lines.append(f"\t  jal _{func_name}\t    # jump to function")
+    lines.append(f"\t  jal _{func_name}\t\t\t    # jump to function")
     lines.append(f"\t  move $t2, $v0\t    # copy function return value from $v0")
     lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
@@ -407,7 +414,7 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
     if "FieldAccess" in arg:
         var = arg["FieldAccess"]["identifier"]
 
-        lines.append(f"\t# PushParam {var}")
+        #lines.append(f"\t# PushParam {var}")
 
         if var in context.get("globals", set()):
             var_offset = context["global_locations"].get(var, 0)
@@ -471,25 +478,25 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
             lines.append(f"\t  div $t2, $t0, $t1")
         
         lines.append(f"\t  sw $t2, {temp_offset}($fp)\t# spill {temp_name} from $t2 to $fp{format_offset(temp_offset)}")
-        lines.append(f"\t# PushParam {temp_name}")
+        #lines.append(f"\t# PushParam {temp_name}")
         emit_push_param(lines, temp_offset, temp_name)
 
     elif "Call" in arg:
         tmp_call_name, tmp_call_offset = emit_function_call(arg["Call"], context=context)
-        lines.append(f"\t# PushParam {tmp_call_name}")
+        #lines.append(f"\t# PushParam {tmp_call_name}")
         emit_push_param(lines, tmp_call_offset, tmp_call_name)
 
     elif "RelationalExpr" in arg:
         tmp_relop = emit_relop_expression(arg, context)
         tmp_offset = context["temp_locations"][tmp_relop]
-        lines.append(f"\t# PushParam {tmp_relop}")
+        #lines.append(f"\t# PushParam {tmp_relop}")
         emit_push_param(lines, tmp_offset, tmp_relop)
     
     elif "LogicalExpr" in arg:
         tmp_logic = emit_logical_expression(arg, context)
         tmp_offset = context["temp_locations"][tmp_logic]
 
-        lines.append(f"\t# PushParam {tmp_logic}")
+        #lines.append(f"\t# PushParam {tmp_logic}")
         emit_push_param(lines, tmp_offset, tmp_logic)
 
     else:
@@ -516,7 +523,7 @@ def emit_print_statement(print_stmt, context):
             var_type = get_var_type(arg["FieldAccess"], context)
             print_fn = type_to_print_fn.get(var_type, "_PrintInt")
 
-            lines.append(f"\t# PushParam {var_name}")
+            #lines.append(f"\t# PushParam {var_name}")
             emit_push_param(lines, offset, var_name)
 
             lines.append(f"\t# LCall {print_fn}")
@@ -542,7 +549,7 @@ def emit_print_statement(print_stmt, context):
             lines.append(f"\t  la $t2, {label_name}\t# load label")
             lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
-            lines.append(f"\t# PushParam {tmp_name}")
+            #lines.append(f"\t# PushParam {tmp_name}")
             emit_push_param(lines, tmp_offset, tmp_name)
 
             lines.append(f"\t# LCall _PrintString")
@@ -559,7 +566,7 @@ def emit_print_statement(print_stmt, context):
 
             tmp_name, tmp_offset = emit_function_call(call_node, tmp_name, tmp_offset, context)
 
-            lines.append(f"\t# PushParam {tmp_name}")
+            #lines.append(f"\t# PushParam {tmp_name}")
             emit_push_param(lines, tmp_offset, tmp_name)
 
             lines.append(f"\t# LCall _PrintInt")
@@ -1092,7 +1099,7 @@ def emit_return_statement(return_stmt, context):
         # === Step 8: Return result ===
         lines.append(f"\t# Return {result_tmp}")
         lines.append(f"\t  lw $t2, {result_offset}($fp)\t# fill {result_tmp} to $t2 from $fp{format_offset(result_offset)}")
-        lines.append(f"\t  move $v0, $t2\t# assign return value into $v0")
+        lines.append(f"\t  move $v0, $t2\t    # assign return value into $v0")
 
         lines.extend(emit_epilogue_lines(add_end_comment=False))
         return

@@ -16,13 +16,13 @@
 	  li $t2, 2	    # load constant value 2 into $t2
 	  sw $t2, -8($fp)	# spill _tmp0 from $t2 to $fp-8
 	# _tmp1 = a + _tmp0
-	  lw $t0, 0($gp)	# fill a to $t0 from $gp+0
+	  lw $t0, 4($fp)	# fill a to $t0 from $fp+4
 	  lw $t1, -8($fp)	# fill _tmp0 to $t1 from $fp-8
 	  add $t2, $t0, $t1
 	  sw $t2, -12($fp)	# spill _tmp1 from $t2 to $fp-12
 	# Return _tmp1
 	  lw $t2, -12($fp)	# fill _tmp1 to $t2 from $fp-12
-	  move $v0, $t2	# assign return value into $v0
+	  move $v0, $t2	    # assign return value into $v0
 	  move $sp, $fp     # pop callee frame off stack
 	  lw $ra, -4($fp)   # restore saved ra
 	  lw $fp, 0($fp)    # restore saved fp
@@ -96,6 +96,7 @@
 	# _tmp7 = 1
 	  li $t2, 1	    # load constant value 1 into $t2
 	  sw $t2, -24($fp)	# spill _tmp7 from $t2 to $fp-24
+	# PushParam _tmp7
 	  subu $sp, $sp, 4	# decrement sp to make space for param
 	  lw $t0, -24($fp)	# fill _tmp7 to $t0 from $fp-24
 	  sw $t0, 4($sp)	# copy param value to stack
@@ -104,7 +105,7 @@
 	  lw $t0, 0($gp)	# fill a to $t0 from $gp+0
 	  sw $t0, 4($sp)	# copy param value to stack
 	# _tmp8 = LCall _foo
-	  jal _foo	    # jump to function
+	  jal _foo			    # jump to function
 	  move $t2, $v0	    # copy function return value from $v0
 	  sw $t2, -28($fp)	# spill _tmp8 from $t2 to $fp-28
 	# PopParams 8
@@ -141,7 +142,7 @@
 	  lw $t0, -48($fp)	# fill _tmp13 to $t0 from $fp-48
 	  sw $t0, 4($sp)	# copy param value to stack
 	# _tmp14 = LCall _foo
-	  jal _foo	    # jump to function
+	  jal _foo			    # jump to function
 	  move $t2, $v0	    # copy function return value from $v0
 	  sw $t2, -52($fp)	# spill _tmp14 from $t2 to $fp-52
 	# PopParams 8
@@ -175,11 +176,12 @@
 	# _tmp20 = 3
 	  li $t2, 3	# load const 3
 	  sw $t2, -76($fp)	# spill _tmp20 from $t2 to $fp-76
+	# PushParam _tmp20
 	  subu $sp, $sp, 4	# decrement sp to make space for param
 	  lw $t0, -76($fp)	# fill _tmp20 to $t0 from $fp-76
 	  sw $t0, 4($sp)	# copy param value to stack
 	# _tmp21 = LCall _foo
-	  jal _foo	    # jump to function
+	  jal _foo			    # jump to function
 	  move $t2, $v0	    # copy function return value from $v0
 	  sw $t2, -80($fp)	# spill _tmp21 from $t2 to $fp-80
 	# PopParams 8
@@ -189,7 +191,7 @@
 	  lw $t0, -80($fp)	# fill _tmp21 to $t0 from $fp-80
 	  sw $t0, 4($sp)	# copy param value to stack
 	# _tmp22 = LCall _foo
-	  jal _foo	    # jump to function
+	  jal _foo			    # jump to function
 	  move $t2, $v0	    # copy function return value from $v0
 	  sw $t2, -84($fp)	# spill _tmp22 from $t2 to $fp-84
 	# PopParams 8
