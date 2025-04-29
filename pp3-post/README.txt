@@ -54,7 +54,6 @@ that can be loaded in SPIM or QtSPIM.
 
 cat defs.asm output.s > final.s
 
-
 5. Expected Output:
 	# standard Decaf preamble 
 	  .text
