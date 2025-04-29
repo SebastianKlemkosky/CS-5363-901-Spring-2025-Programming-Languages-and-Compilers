@@ -9,8 +9,6 @@ from contextlib import redirect_stdout
 import pprint
 
 #TODO: 
-# Create a new main that doesnt concat decaf.asm and our program.s
-# Change output.s to program.s
 # Try to use our spim from our pp3 to see if we need
 #  Loaded: /usr/share/spim/exceptions.s
 # Do this tomorrow at work
@@ -35,7 +33,7 @@ def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
     with open(combined_output_path, "w") as out_file:
         out_file.write(combined)
 
-def main():
+def run_and_concat():
     file_path = r"pp3-post\samples\t4.decaf"
     output_path = r"pp3-post\program.s"
     combined_path = r"pp3-post\final.s"  # for SPIM
@@ -65,6 +63,30 @@ def main():
 
     print(f"Saved output to: {output_path}")
     print(f"Saved QtSPIM-ready file to: {combined_path}")
+
+def main():
+    file_path = r"pp3-post\samples\t4.decaf"
+    output_path = r"pp3-post\program.s"
+
+    source_code = read_source_file(file_path)
+    tokens = tokenize(source_code)
+    ast_output = parse(tokens)
+
+    if isinstance(ast_output, str):
+        output = ast_output
+    else:
+        semantic_errors = check_semantics(ast_output, tokens)
+
+        if semantic_errors:
+            output = "\n".join(semantic_errors) + "\n"
+        else:
+            output = generate_code(ast_output)
+
+    # Save compiler-only output (no defs.asm included)
+    with open(output_path, "w") as f:
+        f.write(output)
+
+    print(f"Saved output to: {output_path}")
 
 if __name__ == "__main__":
     main()
