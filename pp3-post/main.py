@@ -8,13 +8,12 @@ import sys
 from contextlib import redirect_stdout
 import pprint
 
-#TODO: Test while and break statements, create a test.decaf and do this
+#TODO: 
 # Create a new main that doesnt concat decaf.asm and our program.s
 # Change output.s to program.s
 # Try to use our spim from our pp3 to see if we need
 #  Loaded: /usr/share/spim/exceptions.s
 # Do this tomorrow at work
-
 
 
 def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
@@ -38,7 +37,7 @@ def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
 
 def main():
     file_path = r"pp3-post\samples\t4.decaf"
-    output_path = r"pp3-post\output.s"
+    output_path = r"pp3-post\program.s"
     combined_path = r"pp3-post\final.s"  # for SPIM
 
     source_code = read_source_file(file_path)
@@ -48,7 +47,7 @@ def main():
     if isinstance(ast_output, str):
         output = ast_output
     else:
-        pprint.pprint(ast_output)
+        #pprint.pprint(ast_output)
         semantic_errors = check_semantics(ast_output, tokens)
 
         if semantic_errors:

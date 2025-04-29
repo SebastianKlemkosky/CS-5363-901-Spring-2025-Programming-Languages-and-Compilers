@@ -172,10 +172,10 @@ def emit_statement(stmt, context):
         emit_while_statement(stmt["WhileStmt"], context)
        
     elif "BreakStmt" in stmt:
-        emit_break_statement(stmt["BreakStmt"], context)
+        emit_break_statement(context)
         
     elif "ContinueStmt" in stmt:
-        emit_continue_statement(stmt["ContinueStmt"], context)
+        emit_continue_statement(context)
         
     elif "StmtBlock" in stmt:
         for sub_stmt in stmt["StmtBlock"]:
@@ -552,6 +552,24 @@ def emit_print_statement(print_stmt, context):
             lines.append(f"\t# PopParams 4")
             lines.append(f"\t  add $sp, $sp, 4\t# pop params off stack")
 
+        elif "IntConstant" in arg:
+            value = int(arg["IntConstant"]["value"])
+            tmp_name, tmp_offset = allocate_temp(context)
+            context["constant_temps"].add(tmp_name)
+
+            lines.append(f"\t# {tmp_name} = {value}")
+            lines.append(f"\t  li $t2, {value}\t# load constant value {value}")
+            lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+
+            emit_push_param(lines, tmp_offset, tmp_name)
+
+            lines.append(f"\t# LCall _PrintInt")
+            lines.append(f"\t  jal _PrintInt        # jump to function")
+
+            lines.append(f"\t# PopParams 4")
+            lines.append(f"\t  add $sp, $sp, 4\t# pop params off stack")
+
+
         elif "StringConstant" in arg:
             value = arg["StringConstant"]["value"]
 
@@ -802,6 +820,94 @@ def emit_logical_expression(expr, context):
     else:
         raise ValueError(f"Unsupported LogicalExpr operator: {op}")
 
+def emit_equality_expression(expr, context):
+    """
+    Emits MIPS instructions to evaluate an equality expression (== or !=).
+    Returns the name of the temp (_tmpN) holding the boolean result (0/1).
+    """
+    lines = context["lines"]
+
+    if "EqualityExpr" not in expr:
+        raise ValueError("emit_equality_expression expected EqualityExpr")
+
+    eq_expr = expr["EqualityExpr"]
+    left = eq_expr["left"]
+    right = eq_expr["right"]
+    operator = eq_expr["operator"]
+
+    # --- Load left operand ---
+    if "FieldAccess" in left:
+        left_var = left["FieldAccess"]["identifier"]
+        if left_var in context.get("globals", set()):
+            left_offset = context["global_locations"].get(left_var, 0)
+            left_is_global = True
+        else:
+            left_offset = context["var_locations"].get(left_var, -4)
+            left_is_global = False
+    elif "IntConstant" in left or "BoolConstant" in left:
+        val = int(left.get("IntConstant", left.get("BoolConstant"))["value"])
+        tmp_left, left_offset = allocate_temp(context)
+        if tmp_left not in context["constant_temps"]:
+            lines.append(f"\t# {tmp_left} = {val}")
+            lines.append(f"\t  li $t2, {val}\t# load constant value {val}")
+            lines.append(f"\t  sw $t2, {left_offset}($fp)\t# spill {tmp_left} from $t2 to $fp{format_offset(left_offset)}")
+            context["constant_temps"].add(tmp_left)
+        left_var = tmp_left
+        left_is_global = False
+    else:
+        raise ValueError(f"Unsupported left operand: {left}")
+
+    # --- Load right operand ---
+    if "FieldAccess" in right:
+        right_var = right["FieldAccess"]["identifier"]
+        if right_var in context.get("globals", set()):
+            right_offset = context["global_locations"].get(right_var, 0)
+            right_is_global = True
+        else:
+            right_offset = context["var_locations"].get(right_var, -4)
+            right_is_global = False
+    elif "IntConstant" in right or "BoolConstant" in right:
+        val = int(right.get("IntConstant", right.get("BoolConstant"))["value"])
+        tmp_right, right_offset = allocate_temp(context)
+        if tmp_right not in context["constant_temps"]:
+            lines.append(f"\t# {tmp_right} = {val}")
+            lines.append(f"\t  li $t2, {val}\t# load constant value {val}")
+            lines.append(f"\t  sw $t2, {right_offset}($fp)\t# spill {tmp_right} from $t2 to $fp{format_offset(right_offset)}")
+            context["constant_temps"].add(tmp_right)
+        right_var = tmp_right
+        right_is_global = False
+    else:
+        raise ValueError(f"Unsupported right operand: {right}")
+
+    # --- Allocate temp to store result ---
+    tmp_name, tmp_offset = allocate_temp(context)
+    lines.append(f"\t# {tmp_name} = {left_var} {operator} {right_var}")
+
+    # --- Emit load instructions ---
+    if left_is_global:
+        lines.append(f"\t  lw $t0, {left_offset}($gp)\t# fill {left_var} to $t0 from $gp{format_offset(left_offset)}")
+    else:
+        lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
+
+    if right_is_global:
+        lines.append(f"\t  lw $t1, {right_offset}($gp)\t# fill {right_var} to $t1 from $gp{format_offset(right_offset)}")
+    else:
+        lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
+
+    # --- Emit equality instruction ---
+    if operator == "==":
+        lines.append(f"\t  seq $t2, $t0, $t1")
+    elif operator == "!=":
+        lines.append(f"\t  sne $t2, $t0, $t1")
+    else:
+        raise ValueError(f"Unsupported equality operator: {operator}")
+
+    # --- Spill result ---
+    lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
+    context["temp_locations"][tmp_name] = tmp_offset
+
+    return tmp_name
+
 def emit_logical_operand(operand, context):
     """
     Helper to emit left or right operand inside logical expressions.
@@ -917,6 +1023,9 @@ def emit_if_statement(if_node, context):
     if "RelationalExpr" in test_expr:
         tmp_cond = emit_relop_expression(test_expr, context)
         tmp_offset = context["temp_locations"][tmp_cond]
+    elif "EqualityExpr" in test_expr:
+        tmp_cond = emit_equality_expression(test_expr, context)
+        tmp_offset = context["temp_locations"][tmp_cond]
     elif "LogicalExpr" in test_expr:
         tmp_cond = emit_logical_expression(test_expr, context)
         tmp_offset = context["temp_locations"][tmp_cond]
@@ -924,6 +1033,7 @@ def emit_if_statement(if_node, context):
         var = test_expr["FieldAccess"]["identifier"]
         tmp_cond = var
         tmp_offset = context["var_locations"].get(var, -4)
+
     else:
         raise ValueError(f"Unsupported if test expression: {test_expr}")
 
@@ -972,6 +1082,9 @@ def emit_for_statement(for_node, context):
     if test:
         if "RelationalExpr" in test:
             tmp_cond = emit_relop_expression(test, context)
+            tmp_offset = context["temp_locations"][tmp_cond]
+        elif "EqualityExpr" in test:
+            tmp_cond = emit_equality_expression(test, context)
             tmp_offset = context["temp_locations"][tmp_cond]
         elif "LogicalExpr" in test:
             tmp_cond = emit_logical_expression(test, context)
@@ -1031,6 +1144,9 @@ def emit_while_statement(while_node, context):
     if test:
         if "RelationalExpr" in test:
             tmp_cond = emit_relop_expression(test, context)
+            tmp_offset = context["temp_locations"][tmp_cond]
+        elif "EqualityExpr" in test:
+            tmp_cond = emit_equality_expression(test, context)
             tmp_offset = context["temp_locations"][tmp_cond]
         elif "LogicalExpr" in test:
             tmp_cond = emit_logical_expression(test, context)

@@ -1,15 +1,15 @@
 void main() {
-  int x;
+    int i;
+    i = 0;
 
-  if (3.14) {
-    x = 1;
-  }
+    while (i < 10) {
+        if (i == 5) {
+            break;
+        }
+        Print(i, "\n");
+        i = i + 1;
+    }
 
-  while ("hello") {
-    x = 2;
-  }
-
-  for (x = 0; 7 * 2; x = x + 1) {
-    x = 3;
-  }
+    Print(100, "\n");  // Confirm we broke correctly
 }
+
