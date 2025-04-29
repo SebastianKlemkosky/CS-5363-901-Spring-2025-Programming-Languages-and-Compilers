@@ -8,6 +8,15 @@ import sys
 from contextlib import redirect_stdout
 import pprint
 
+#TODO: Test while and break statements, create a test.decaf and do this
+# Create a new main that doesnt concat decaf.asm and our program.s
+# Change output.s to program.s
+# Try to use our spim from our pp3 to see if we need
+#  Loaded: /usr/share/spim/exceptions.s
+# Do this tomorrow at work
+
+
+
 def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
     """
     Appends the Decaf runtime (defs.asm) to the compiled MIPS code
