@@ -110,32 +110,32 @@
 	  sw $t2, -28($fp)	# spill _tmp8 from $t2 to $fp-28
 	# PopParams 8
 	  add $sp, $sp, 8	# pop params off stack
-	# _tmp9 = a < b
+	# _tmp9 = 2
+	  li $t2, 2	    # load constant value 2 into $t2
+	  sw $t2, -32($fp)	# spill _tmp9 from $t2 to $fp-32
+	# _tmp10 = b + _tmp9
+	  lw $t0, -8($fp)	# fill b to $t0 from $fp-8
+	  lw $t1, -32($fp)	# fill _tmp9 to $t1 from $fp-32
+	  add $t2, $t0, $t1
+	  sw $t2, -36($fp)	# spill _tmp10 from $t2 to $fp-36
+	# PushParam _tmp10
+	  subu $sp, $sp, 4	# decrement sp to make space for param
+	  lw $t0, -36($fp)	# fill _tmp10 to $t0 from $fp-36
+	  sw $t0, 4($sp)	# copy param value to stack
+	# _tmp11 = a < b
 	  lw $t0, 4($fp)	# fill a to $t0 from $fp+4
 	  lw $t1, -8($fp)	# fill b to $t1 from $fp-8
 	  slt $t2, $t0, $t1
-	  sw $t2, -32($fp)	# spill _tmp9 from $t2 to $fp-32
-	# _tmp10 = a == b
+	  sw $t2, -40($fp)	# spill _tmp11 from $t2 to $fp-40
+	# _tmp12 = a == b
 	  lw $t0, 4($fp)	# fill a to $t0 from $fp+4
 	  lw $t1, -8($fp)	# fill b to $t1 from $fp-8
 	  seq $t2, $t0, $t1
-	  sw $t2, -36($fp)	# spill _tmp10 from $t2 to $fp-36
-	# _tmp11 = _tmp9 || _tmp10
-	  lw $t0, -32($fp)	# fill _tmp9 to $t0 from $fp-32
-	  lw $t1, -36($fp)	# fill _tmp10 to $t1 from $fp-36
-	  or $t2, $t0, $t1
-	  sw $t2, -40($fp)	# spill _tmp11 from $t2 to $fp-40
-	# PushParam _tmp11
-	  subu $sp, $sp, 4	# decrement sp to make space for param
-	  lw $t0, -40($fp)	# fill _tmp11 to $t0 from $fp-40
-	  sw $t0, 4($sp)	# copy param value to stack
-	# _tmp12 = 2
-	  li $t2, 2	    # load constant value 2 into $t2
 	  sw $t2, -44($fp)	# spill _tmp12 from $t2 to $fp-44
-	# _tmp13 = b + _tmp12
-	  lw $t0, -8($fp)	# fill b to $t0 from $fp-8
+	# _tmp13 = _tmp11 || _tmp12
+	  lw $t0, -40($fp)	# fill _tmp11 to $t0 from $fp-40
 	  lw $t1, -44($fp)	# fill _tmp12 to $t1 from $fp-44
-	  add $t2, $t0, $t1
+	  or $t2, $t0, $t1
 	  sw $t2, -48($fp)	# spill _tmp13 from $t2 to $fp-48
 	# PushParam _tmp13
 	  subu $sp, $sp, 4	# decrement sp to make space for param
@@ -147,45 +147,45 @@
 	  sw $t2, -52($fp)	# spill _tmp14 from $t2 to $fp-52
 	# PopParams 8
 	  add $sp, $sp, 8	# pop params off stack
-	# _tmp15 = 1
-	  li $t2, 1
-	  sw $t2, -56($fp)	# spill _tmp15
-	# _tmp16 = !_tmp15
-	  lw $t0, -56($fp)
-	  seqz $t2, $t0	# NOT operation
-	  sw $t2, -60($fp)	# spill _tmp16
-	# PushParam _tmp16
+	# _tmp15 = 3
+	  li $t2, 3	# load const 3
+	  sw $t2, -56($fp)	# spill _tmp15 from $t2 to $fp-56
+	# PushParam _tmp15
 	  subu $sp, $sp, 4	# decrement sp to make space for param
-	  lw $t0, -60($fp)	# fill _tmp16 to $t0 from $fp-60
+	  lw $t0, -56($fp)	# fill _tmp15 to $t0 from $fp-56
 	  sw $t0, 4($sp)	# copy param value to stack
-	# _tmp17 = 0
+	# _tmp16 = 0
 	  li $t2, 0
-	  sw $t2, -64($fp)	# spill _tmp17
-	# _tmp18 = 1
+	  sw $t2, -60($fp)	# spill _tmp16
+	# _tmp17 = 1
 	  li $t2, 1
-	  sw $t2, -68($fp)	# spill _tmp18
-	# _tmp19 = _tmp18 && _tmp17
-	  lw $t0, -68($fp)
-	  lw $t1, -64($fp)
+	  sw $t2, -64($fp)	# spill _tmp17
+	# _tmp18 = _tmp17 && _tmp16
+	  lw $t0, -64($fp)
+	  lw $t1, -60($fp)
 	  and $t2, $t0, $t1
-	  sw $t2, -72($fp)	# spill _tmp19
+	  sw $t2, -68($fp)	# spill _tmp18
+	# PushParam _tmp18
+	  subu $sp, $sp, 4	# decrement sp to make space for param
+	  lw $t0, -68($fp)	# fill _tmp18 to $t0 from $fp-68
+	  sw $t0, 4($sp)	# copy param value to stack
+	# _tmp19 = LCall _foo
+	  jal _foo			    # jump to function
+	  move $t2, $v0	    # copy function return value from $v0
+	  sw $t2, -72($fp)	# spill _tmp19 from $t2 to $fp-72
+	# PopParams 8
+	  add $sp, $sp, 8	# pop params off stack
 	# PushParam _tmp19
 	  subu $sp, $sp, 4	# decrement sp to make space for param
 	  lw $t0, -72($fp)	# fill _tmp19 to $t0 from $fp-72
 	  sw $t0, 4($sp)	# copy param value to stack
-	# _tmp20 = 3
-	  li $t2, 3	# load const 3
-	  sw $t2, -76($fp)	# spill _tmp20 from $t2 to $fp-76
-	# PushParam _tmp20
-	  subu $sp, $sp, 4	# decrement sp to make space for param
-	  lw $t0, -76($fp)	# fill _tmp20 to $t0 from $fp-76
-	  sw $t0, 4($sp)	# copy param value to stack
-	# _tmp21 = LCall _foo
-	  jal _foo			    # jump to function
-	  move $t2, $v0	    # copy function return value from $v0
-	  sw $t2, -80($fp)	# spill _tmp21 from $t2 to $fp-80
-	# PopParams 8
-	  add $sp, $sp, 8	# pop params off stack
+	# _tmp20 = 1
+	  li $t2, 1
+	  sw $t2, -76($fp)	# spill _tmp20
+	# _tmp21 = !_tmp20
+	  lw $t0, -76($fp)
+	  seqz $t2, $t0	# NOT operation
+	  sw $t2, -80($fp)	# spill _tmp21
 	# PushParam _tmp21
 	  subu $sp, $sp, 4	# decrement sp to make space for param
 	  lw $t0, -80($fp)	# fill _tmp21 to $t0 from $fp-80

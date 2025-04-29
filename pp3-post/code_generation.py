@@ -182,6 +182,7 @@ def emit_statement(stmt, context):
             emit_statement(sub_stmt, context)
     
     elif "Call" in stmt:
+        print(stmt["Call"])
         emit_function_call(stmt["Call"], context=context)
 
     else:
@@ -374,6 +375,7 @@ def emit_assign_call(assign_expr, context):
     lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{tmp_offset}")
 
     # Step 4: Pop params
+    # TODO: Fix this
     if actuals:
         lines.append(f"\t# PopParams {len(actuals) * 4}")
         lines.append(f"\t  add $sp, $sp, {len(actuals) * 4}\t# pop params off stack")
@@ -387,13 +389,31 @@ def emit_assign_call(assign_expr, context):
 def emit_function_call(call_node, tmp_name=None, tmp_offset=None, context=None, allocate_inner_constants=True):
     lines = context["lines"]
     func_name = call_node["identifier"]
-    args = call_node.get("actuals", [])
 
-    # --- Push parameters (reversed order) ---
-    for arg in reversed(args):
+    if "actuals" not in call_node:
+        raise Exception(f"Function call node missing 'actuals': {call_node}")
+
+    args = call_node["actuals"]
+
+    # ✅ Step 1: Decide if we should reverse arguments
+    simple = True
+    for arg in args:
+        if any(k in arg for k in ("ArithmeticExpr", "RelationalExpr", "LogicalExpr", "Call")):
+            simple = False
+            break
+
+    if simple:
+        print(f"DEBUG: Simple args detected for {func_name}, reversing arguments")
+        process_args = reversed(args)
+    else:
+        print(f"DEBUG: Complex args detected for {func_name}, keeping original order")
+        process_args = args
+
+    # ✅ Step 2: Push parameters
+    for arg in process_args:
         emit_argument(arg, context, tmp_name, tmp_offset, allocate_inner_constants)
-
-   
+    
+    # ✅ Step 3: Allocate temp for return value
     tmp_name, tmp_offset = allocate_temp(context)
 
     lines.append(f"\t# {tmp_name} = LCall _{func_name}")
@@ -401,12 +421,13 @@ def emit_function_call(call_node, tmp_name=None, tmp_offset=None, context=None, 
     lines.append(f"\t  move $t2, $v0\t    # copy function return value from $v0")
     lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
-    # --- Pop parameters ---
+    # ✅ Step 4: Pop parameters
     if args:
         lines.append(f"\t# PopParams {len(args) * 4}")
         lines.append(f"\t  add $sp, $sp, {len(args) * 4}\t# pop params off stack")
 
     return tmp_name, tmp_offset
+
 
 def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_constants=True):
     lines = context["lines"]
@@ -432,7 +453,7 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
         lines.append(f"\t  li $t2, {value}\t# load const {value}")
         lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
         emit_push_param(lines, tmp_offset, tmp_name)
-    #TODO: Start here and fix our mips
+
     elif "BoolConstant" in arg:
         value = arg["BoolConstant"]["value"]
         bool_val = 1 if value == "true" else 0
