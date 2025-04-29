@@ -182,7 +182,7 @@ def emit_statement(stmt, context):
             emit_statement(sub_stmt, context)
     
     elif "Call" in stmt:
-        print(stmt["Call"])
+        #print(stmt["Call"])
         emit_function_call(stmt["Call"], context=context)
 
     else:
@@ -363,7 +363,6 @@ def emit_assign_call(assign_expr, context):
 
     # Step 2: Push parameters in reverse order
     for tmp_name, tmp_offset in reversed(tmp_args):
-        #lines.append(f"\t# PushParam {tmp_name}")
         emit_push_param(lines, tmp_offset, tmp_name)
 
     # Step 3: Call the function and assign to a new temp
@@ -403,21 +402,22 @@ def emit_function_call(call_node, tmp_name=None, tmp_offset=None, context=None, 
             break
 
     if simple:
-        print(f"DEBUG: Simple args detected for {func_name}, reversing arguments")
+        #print(f"DEBUG: Simple args detected for {func_name}, reversing arguments")
         process_args = reversed(args)
     else:
-        print(f"DEBUG: Complex args detected for {func_name}, keeping original order")
+        #print(f"DEBUG: Complex args detected for {func_name}, keeping original order")
         process_args = args
 
     # ✅ Step 2: Compute arguments first (DO NOT push yet)
     computed_args = []  # list of (tmp_name, tmp_offset)
     for arg in process_args:
-        tmp_name, tmp_offset = emit_argument(arg, context, tmp_name, tmp_offset, allocate_inner_constants)
-        computed_args.append((tmp_name, tmp_offset))
+        tmp_name, tmp_offset, is_global = emit_argument(arg, context, tmp_name, tmp_offset, allocate_inner_constants)
+        computed_args.append((tmp_name, tmp_offset, is_global))
 
     # ✅ Step 3: Push parameters (after all are computed)
-    for tmp_name, tmp_offset in computed_args:
-        emit_push_param(lines, tmp_offset, var_name=tmp_name)
+    for tmp_name, tmp_offset, is_global in reversed(computed_args):
+        
+        emit_push_param(lines, tmp_offset, var_name=tmp_name, is_global=is_global)
 
     # ✅ Step 4: Allocate temp for return value
     tmp_name, tmp_offset = allocate_temp(context)
@@ -442,10 +442,10 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
 
         if var in context.get("globals", set()):
             var_offset = context["global_locations"].get(var, 0)
+            return var, var_offset, True  # ✅ Global
         else:
             var_offset = context["var_locations"].get(var, -4)
-
-        return var, var_offset  # ✅ Just return, do not push
+            return var, var_offset, False  # ✅ Local
 
     elif "IntConstant" in arg:
         value = int(arg["IntConstant"]["value"])
@@ -453,10 +453,10 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
         context["constant_temps"].add(tmp_name)
 
         lines.append(f"\t# {tmp_name} = {value}")
-        lines.append(f"\t  li $t2, {value}\t# load const {value}")
+        lines.append(f"\t  li $t2, {value}\t    # load constant value {value} into $t2")
         lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
-        return tmp_name, tmp_offset
+        return tmp_name, tmp_offset, False  # Always frame pointer
 
     elif "BoolConstant" in arg:
         value = arg["BoolConstant"]["value"]
@@ -465,10 +465,10 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
         context["constant_temps"].add(tmp_name)
 
         lines.append(f"\t# {tmp_name} = {bool_val}")
-        lines.append(f"\t  li $t2, {bool_val}\t# load bool const {bool_val}")
+        lines.append(f"\t  li $t2, {bool_val}\t    # load constant value {bool_val} into $t2")
         lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
-        return tmp_name, tmp_offset
+        return tmp_name, tmp_offset, False  # Always frame pointer
 
     elif "ArithmeticExpr" in arg:
         arith = arg["ArithmeticExpr"]
@@ -502,25 +502,25 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
 
         lines.append(f"\t  sw $t2, {result_tmp_offset}($fp)\t# spill {result_tmp_name} from $t2 to $fp{format_offset(result_tmp_offset)}")
 
-        return result_tmp_name, result_tmp_offset
+        return result_tmp_name, result_tmp_offset, False  # Always frame pointer
 
     elif "Call" in arg:
         tmp_call_name, tmp_call_offset = emit_function_call(arg["Call"], context=context)
-        return tmp_call_name, tmp_call_offset
+        return tmp_call_name, tmp_call_offset, False  # Always frame pointer
 
     elif "RelationalExpr" in arg:
         tmp_relop = emit_relop_expression(arg, context)
         tmp_offset = context["temp_locations"][tmp_relop]
-        return tmp_relop, tmp_offset
+        return tmp_relop, tmp_offset, False  # Always frame pointer
 
     elif "LogicalExpr" in arg:
         tmp_logic = emit_logical_expression(arg, context)
         tmp_offset = context["temp_locations"][tmp_logic]
-        return tmp_logic, tmp_offset
+        return tmp_logic, tmp_offset, False  # Always frame pointer
 
     else:
         print(f"WARNING: Complex function call argument not handled: {arg}")
-        return None, None
+        return None, None, False
 
 def emit_print_statement(print_stmt, context):
     lines = context["lines"]
@@ -615,11 +615,14 @@ def emit_relop_expression(expr, context):
     operator = relop["operator"]
 
     # --- Load left operand ---
-    left_is_field = False
     if "FieldAccess" in left:
         left_var = left["FieldAccess"]["identifier"]
-        left_offset = context["var_locations"].get(left_var, 4)
-        left_is_field = True
+        if left_var in context.get("globals", set()):
+            left_offset = context["global_locations"].get(left_var, 0)
+            left_is_global = True
+        else:
+            left_offset = context["var_locations"].get(left_var, 4)
+            left_is_global = False
 
     elif "IntConstant" in left or "BoolConstant" in left:
         val = int(left.get("IntConstant", left.get("BoolConstant"))["value"])
@@ -627,22 +630,27 @@ def emit_relop_expression(expr, context):
 
         if tmp_left not in context["constant_temps"]:
             lines.append(f"\t# {tmp_left} = {val}")
-            lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
+            lines.append(f"\t  li $t2, {val}\t# load constant value {val}")
             lines.append(f"\t  sw $t2, {tmp_left_offset}($fp)\t# spill {tmp_left} from $t2 to $fp{format_offset(tmp_left_offset)}")
             context["constant_temps"].add(tmp_left)
 
         left_var = tmp_left
         left_offset = tmp_left_offset
+        left_is_global = False
 
     else:
         print(f"WARNING: Unsupported left operand type: {left}")
+        left_var, left_offset, left_is_global = None, None, False
 
     # --- Load right operand ---
-    right_is_field = False
     if "FieldAccess" in right:
         right_var = right["FieldAccess"]["identifier"]
-        right_offset = context["var_locations"].get(right_var, 8)
-        right_is_field = True
+        if right_var in context.get("globals", set()):
+            right_offset = context["global_locations"].get(right_var, 0)
+            right_is_global = True
+        else:
+            right_offset = context["var_locations"].get(right_var, 8)
+            right_is_global = False
 
     elif "IntConstant" in right or "BoolConstant" in right:
         val = int(right.get("IntConstant", right.get("BoolConstant"))["value"])
@@ -650,23 +658,33 @@ def emit_relop_expression(expr, context):
 
         if tmp_right not in context["constant_temps"]:
             lines.append(f"\t# {tmp_right} = {val}")
-            lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
+            lines.append(f"\t  li $t2, {val}\t# load constant value {val}")
             lines.append(f"\t  sw $t2, {tmp_right_offset}($fp)\t# spill {tmp_right} from $t2 to $fp{format_offset(tmp_right_offset)}")
             context["constant_temps"].add(tmp_right)
 
         right_var = tmp_right
         right_offset = tmp_right_offset
+        right_is_global = False
 
     else:
         print(f"WARNING: Unsupported right operand type: {right}")
+        right_var, right_offset, right_is_global = None, None, False
 
     # --- Allocate temp to store result ---
     tmp_name, tmp_offset = allocate_temp(context)
 
     # --- Emit the load instructions ---
     lines.append(format_relop_comment(tmp_name, left_var, operator, right_var))
-    lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
-    lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
+
+    if left_is_global:
+        lines.append(f"\t  lw $t0, {left_offset}($gp)\t# fill {left_var} to $t0 from $gp{format_offset(left_offset)}")
+    else:
+        lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
+
+    if right_is_global:
+        lines.append(f"\t  lw $t1, {right_offset}($gp)\t# fill {right_var} to $t1 from $gp{format_offset(right_offset)}")
+    else:
+        lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
 
     # --- Emit relational operation ---
     emit_relop("$t0", "$t1", operator, "$t2", lines)
@@ -674,19 +692,25 @@ def emit_relop_expression(expr, context):
     # --- Spill result ---
     lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
+    # --- Handle <= or >= case by merging with ==
     if operator in ("<=", ">="):
-        # --- Also emit equality check (==)
         tmp_eq_name, tmp_eq_offset = allocate_temp(context)
 
-        # Emit lw for left and right again
         lines.append(f"\t# {tmp_eq_name} = {left_var} == {right_var}")
-        lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
-        lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
-        emit_relop("$t0", "$t1", "==", "$t2", lines)
 
+        if left_is_global:
+            lines.append(f"\t  lw $t0, {left_offset}($gp)\t# fill {left_var} to $t0 from $gp{format_offset(left_offset)}")
+        else:
+            lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_var} to $t0 from $fp{format_offset(left_offset)}")
+
+        if right_is_global:
+            lines.append(f"\t  lw $t1, {right_offset}($gp)\t# fill {right_var} to $t1 from $gp{format_offset(right_offset)}")
+        else:
+            lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_var} to $t1 from $fp{format_offset(right_offset)}")
+
+        emit_relop("$t0", "$t1", "==", "$t2", lines)
         lines.append(f"\t  sw $t2, {tmp_eq_offset}($fp)\t# spill {tmp_eq_name} from $t2 to $fp{format_offset(tmp_eq_offset)}")
 
-        # --- Merge (or) tmp_name and tmp_eq_name into a final OR
         tmp_final_name, tmp_final_offset = allocate_temp(context)
 
         lines.append(f"\t# {tmp_final_name} = {tmp_name} || {tmp_eq_name}")
@@ -712,78 +736,111 @@ def emit_logical_expression(expr, context):
     logic = expr["LogicalExpr"]
     op = logic["operator"]
 
-    # Handle 'right' always
-    right_expr = logic["right"]
-    right_tmp = None
-
-    if "LogicalExpr" in right_expr:
-        right_tmp = emit_logical_expression(right_expr, context)
-    elif "RelationalExpr" in right_expr:
-        right_tmp = emit_relop_expression(right_expr, context)
-    elif "BoolConstant" in right_expr:
-        val = 1 if right_expr["BoolConstant"]["value"] == "true" else 0
-        right_tmp, right_offset = allocate_temp(context)
-        lines.append(f"\t# {right_tmp} = {val}")
-        lines.append(f"\t  li $t2, {val}")
-        lines.append(f"\t  sw $t2, {right_offset}($fp)\t# spill {right_tmp}")
-        context["constant_temps"].add(right_tmp)
-        context["temp_locations"][right_tmp] = right_offset
-    else:
-        print(f"WARNING: LogicalExpr right operand not handled yet: {right_expr}")
-
-    right_offset = context["temp_locations"][right_tmp]
-
-    # If binary op (&& or ||)
+    # If binary op (&& or ||), handle left first
     if op in ("&&", "||"):
         left_expr = logic["left"]
-        left_tmp = None
+        right_expr = logic["right"]
 
-        if "LogicalExpr" in left_expr:
-            left_tmp = emit_logical_expression(left_expr, context)
-        elif "RelationalExpr" in left_expr:
-            left_tmp = emit_relop_expression(left_expr, context)
-        elif "BoolConstant" in left_expr:
-            val = 1 if left_expr["BoolConstant"]["value"] == "true" else 0
-            left_tmp, left_offset = allocate_temp(context)
-            lines.append(f"\t# {left_tmp} = {val}")
-            lines.append(f"\t  li $t2, {val}")
-            lines.append(f"\t  sw $t2, {left_offset}($fp)\t# spill {left_tmp}")
-            context["constant_temps"].add(left_tmp)
-            context["temp_locations"][left_tmp] = left_offset
-        else:
-            print(f"WARNING: LogicalExpr left operand not handled yet: {left_expr}")
-
-        left_offset = context["temp_locations"][left_tmp]
+        left_tmp, left_offset, left_is_global = emit_logical_operand(left_expr, context)
+        right_tmp, right_offset, right_is_global = emit_logical_operand(right_expr, context)
 
         result_tmp, result_offset = allocate_temp(context)
+
         lines.append(f"\t# {result_tmp} = {left_tmp} {op} {right_tmp}")
-        lines.append(f"\t  lw $t0, {left_offset}($fp)")
-        lines.append(f"\t  lw $t1, {right_offset}($fp)")
+
+        if left_is_global:
+            lines.append(f"\t  lw $t0, {left_offset}($gp)\t# fill {left_tmp} to $t0 from $gp{format_offset(left_offset)}")
+        else:
+            lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left_tmp} to $t0 from $fp{format_offset(left_offset)}")
+
+        if right_is_global:
+            lines.append(f"\t  lw $t1, {right_offset}($gp)\t# fill {right_tmp} to $t1 from $gp{format_offset(right_offset)}")
+        else:
+            lines.append(f"\t  lw $t1, {right_offset}($fp)\t# fill {right_tmp} to $t1 from $fp{format_offset(right_offset)}")
 
         if op == "&&":
             lines.append(f"\t  and $t2, $t0, $t1")
         elif op == "||":
             lines.append(f"\t  or $t2, $t0, $t1")
 
-        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp}")
+        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp} from $t2 to $fp{format_offset(result_offset)}")
         context["temp_locations"][result_tmp] = result_offset
         return result_tmp
 
     # If unary op (!)
     elif op == "!":
-        result_tmp, result_offset = allocate_temp(context)
-        lines.append(f"\t# {result_tmp} = !{right_tmp}")
-        lines.append(f"\t  lw $t0, {right_offset}($fp)")
+        right_expr = logic["right"]
+        right_tmp, right_offset, right_is_global = emit_logical_operand(right_expr, context)
 
-        # Manual NOT: 
-        #  if t0 == 0 -> 1, else 0
-        lines.append(f"\t  seqz $t2, $t0\t# NOT operation")
-        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp}")
+        # ✅ Step 1: Allocate a new temp for constant 0
+        zero_tmp, zero_offset = allocate_temp(context)
+
+        lines.append(f"\t# {zero_tmp} = 0")
+        lines.append(f"\t  li $t2, 0\t    # load constant value 0")
+        lines.append(f"\t  sw $t2, {zero_offset}($fp)\t# spill {zero_tmp} from $t2 to $fp{format_offset(zero_offset)}")
+
+        # ✅ Step 2: Allocate the final result temp
+        result_tmp, result_offset = allocate_temp(context)
+
+        lines.append(f"\t# {result_tmp} = {right_tmp} == {zero_tmp}")
+
+        if right_is_global:
+            lines.append(f"\t  lw $t0, {right_offset}($gp)\t# fill {right_tmp} to $t0 from $gp{format_offset(right_offset)}")
+        else:
+            lines.append(f"\t  lw $t0, {right_offset}($fp)\t# fill {right_tmp} to $t0 from $fp{format_offset(right_offset)}")
+
+        # Zero temp is always local (frame pointer)
+        lines.append(f"\t  lw $t1, {zero_offset}($fp)\t# fill {zero_tmp} to $t1 from $fp{format_offset(zero_offset)}")
+
+        lines.append(f"\t  seq $t2, $t0, $t1")
+        lines.append(f"\t  sw $t2, {result_offset}($fp)\t# spill {result_tmp} from $t2 to $fp{format_offset(result_offset)}")
+
         context["temp_locations"][result_tmp] = result_offset
         return result_tmp
 
+
     else:
         raise ValueError(f"Unsupported LogicalExpr operator: {op}")
+
+def emit_logical_operand(operand, context):
+    """
+    Helper to emit left or right operand inside logical expressions.
+    Returns (tmp_name, tmp_offset, is_global)
+    """
+    lines = context["lines"]
+
+    if "LogicalExpr" in operand:
+        tmp = emit_logical_expression(operand, context)
+        offset = context["temp_locations"][tmp]
+        return tmp, offset, False
+
+    elif "RelationalExpr" in operand:
+        tmp = emit_relop_expression(operand, context)
+        offset = context["temp_locations"][tmp]
+        return tmp, offset, False
+
+    elif "FieldAccess" in operand:
+        var = operand["FieldAccess"]["identifier"]
+        if var in context.get("globals", set()):
+            offset = context["global_locations"].get(var, 0)
+            return var, offset, True
+        else:
+            offset = context["var_locations"].get(var, -4)
+            return var, offset, False
+
+    elif "BoolConstant" in operand:
+        val = 1 if operand["BoolConstant"]["value"] == "true" else 0
+        tmp, tmp_offset = allocate_temp(context)
+        lines.append(f"\t# {tmp} = {val}")
+        lines.append(f"\t  li $t2, {val}\t    # load constant value {val} into $t2")
+        lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp} from $t2 to $fp{format_offset(tmp_offset)}")
+        context["constant_temps"].add(tmp)
+        context["temp_locations"][tmp] = tmp_offset
+        return tmp, tmp_offset, False
+
+    else:
+        print(f"WARNING: emit_logical_operand: unhandled operand: {operand}")
+        return None, None, False
 
 def emit_relop(left_reg, right_reg, operator, target_reg, lines):
     """
