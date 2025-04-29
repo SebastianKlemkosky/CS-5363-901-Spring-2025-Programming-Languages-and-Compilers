@@ -7,12 +7,13 @@ from code_generation import generate_code
 import sys
 from contextlib import redirect_stdout
 import pprint
+import argparse
+import os
 
 #TODO: 
 # Try to use our spim from our pp3 to see if we need
 #  Loaded: /usr/share/spim/exceptions.s
 # Do this tomorrow at work
-
 
 def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
     """
@@ -65,8 +66,13 @@ def run_and_concat():
     print(f"Saved QtSPIM-ready file to: {combined_path}")
 
 def main():
-    file_path = r"pp3-post\samples\t4.decaf"
+    parser = argparse.ArgumentParser(description='Compile a Decaf source file into MIPS assembly.')
+    parser.add_argument('file', type=str, help='Path to the Decaf (.decaf) source file')
+    args = parser.parse_args()
+
+    file_path = args.file
     output_path = r"pp3-post\program.s"
+    combined_path = r"pp3-post\final.s"  # for SPIM
 
     source_code = read_source_file(file_path)
     tokens = tokenize(source_code)
@@ -82,11 +88,7 @@ def main():
         else:
             output = generate_code(ast_output)
 
-    # Save compiler-only output (no defs.asm included)
-    with open(output_path, "w") as f:
-        f.write(output)
-
-    print(f"Saved output to: {output_path}")
+    print(output)
 
 if __name__ == "__main__":
     main()

@@ -9,4 +9,4 @@ if [ -z "$1" ]; then
 fi
 
 # Run the Python lexer on the given source file
-python3 main.py "$1"
+python main.py "$1"
