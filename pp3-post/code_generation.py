@@ -409,11 +409,17 @@ def emit_function_call(call_node, tmp_name=None, tmp_offset=None, context=None, 
         print(f"DEBUG: Complex args detected for {func_name}, keeping original order")
         process_args = args
 
-    # ✅ Step 2: Push parameters
+    # ✅ Step 2: Compute arguments first (DO NOT push yet)
+    computed_args = []  # list of (tmp_name, tmp_offset)
     for arg in process_args:
-        emit_argument(arg, context, tmp_name, tmp_offset, allocate_inner_constants)
-    
-    # ✅ Step 3: Allocate temp for return value
+        tmp_name, tmp_offset = emit_argument(arg, context, tmp_name, tmp_offset, allocate_inner_constants)
+        computed_args.append((tmp_name, tmp_offset))
+
+    # ✅ Step 3: Push parameters (after all are computed)
+    for tmp_name, tmp_offset in computed_args:
+        emit_push_param(lines, tmp_offset, var_name=tmp_name)
+
+    # ✅ Step 4: Allocate temp for return value
     tmp_name, tmp_offset = allocate_temp(context)
 
     lines.append(f"\t# {tmp_name} = LCall _{func_name}")
@@ -421,13 +427,12 @@ def emit_function_call(call_node, tmp_name=None, tmp_offset=None, context=None, 
     lines.append(f"\t  move $t2, $v0\t    # copy function return value from $v0")
     lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
 
-    # ✅ Step 4: Pop parameters
+    # ✅ Step 5: Pop parameters
     if args:
         lines.append(f"\t# PopParams {len(args) * 4}")
         lines.append(f"\t  add $sp, $sp, {len(args) * 4}\t# pop params off stack")
 
     return tmp_name, tmp_offset
-
 
 def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_constants=True):
     lines = context["lines"]
@@ -435,14 +440,12 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
     if "FieldAccess" in arg:
         var = arg["FieldAccess"]["identifier"]
 
-        #lines.append(f"\t# PushParam {var}")
-
         if var in context.get("globals", set()):
             var_offset = context["global_locations"].get(var, 0)
-            emit_push_param(lines, var_offset, var_name=var, is_global=True)
         else:
             var_offset = context["var_locations"].get(var, -4)
-            emit_push_param(lines, var_offset, var_name=var, is_global=False)
+
+        return var, var_offset  # ✅ Just return, do not push
 
     elif "IntConstant" in arg:
         value = int(arg["IntConstant"]["value"])
@@ -452,7 +455,8 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
         lines.append(f"\t# {tmp_name} = {value}")
         lines.append(f"\t  li $t2, {value}\t# load const {value}")
         lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
-        emit_push_param(lines, tmp_offset, tmp_name)
+
+        return tmp_name, tmp_offset
 
     elif "BoolConstant" in arg:
         value = arg["BoolConstant"]["value"]
@@ -461,9 +465,10 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
         context["constant_temps"].add(tmp_name)
 
         lines.append(f"\t# {tmp_name} = {bool_val}")
-        lines.append(f"\t  li $t2, {bool_val}\t    # load constant value {bool_val} into $t2")
+        lines.append(f"\t  li $t2, {bool_val}\t# load bool const {bool_val}")
         lines.append(f"\t  sw $t2, {tmp_offset}($fp)\t# spill {tmp_name} from $t2 to $fp{format_offset(tmp_offset)}")
-        emit_push_param(lines, tmp_offset, tmp_name)
+
+        return tmp_name, tmp_offset
 
     elif "ArithmeticExpr" in arg:
         arith = arg["ArithmeticExpr"]
@@ -473,19 +478,16 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
 
         left_offset = context["var_locations"].get(left, -4)
 
-        tmp_right_name, tmp_right_offset = tmp_name, tmp_offset
-        if tmp_right_name is None or tmp_right_offset is None:
-            tmp_right_name, tmp_right_offset = allocate_temp(context)
-
+        tmp_right_name, tmp_right_offset = allocate_temp(context)
         context["constant_temps"].add(tmp_right_name)
 
         lines.append(f"\t# {tmp_right_name} = {right_val}")
         lines.append(f"\t  li $t2, {right_val}\t    # load constant value {right_val} into $t2")
         lines.append(f"\t  sw $t2, {tmp_right_offset}($fp)\t# spill {tmp_right_name} from $t2 to $fp{format_offset(tmp_right_offset)}")
 
-        temp_name, temp_offset = allocate_temp(context)
+        result_tmp_name, result_tmp_offset = allocate_temp(context)
 
-        lines.append(f"\t# {temp_name} = {left} {op} {tmp_right_name}")
+        lines.append(f"\t# {result_tmp_name} = {left} {op} {tmp_right_name}")
         lines.append(f"\t  lw $t0, {left_offset}($fp)\t# fill {left} to $t0 from $fp{format_offset(left_offset)}")
         lines.append(f"\t  lw $t1, {tmp_right_offset}($fp)\t# fill {tmp_right_name} to $t1 from $fp{format_offset(tmp_right_offset)}")
 
@@ -497,31 +499,28 @@ def emit_argument(arg, context, tmp_name=None, tmp_offset=None, allocate_inner_c
             lines.append(f"\t  mul $t2, $t0, $t1")
         elif op == "/":
             lines.append(f"\t  div $t2, $t0, $t1")
-        
-        lines.append(f"\t  sw $t2, {temp_offset}($fp)\t# spill {temp_name} from $t2 to $fp{format_offset(temp_offset)}")
-        #lines.append(f"\t# PushParam {temp_name}")
-        emit_push_param(lines, temp_offset, temp_name)
+
+        lines.append(f"\t  sw $t2, {result_tmp_offset}($fp)\t# spill {result_tmp_name} from $t2 to $fp{format_offset(result_tmp_offset)}")
+
+        return result_tmp_name, result_tmp_offset
 
     elif "Call" in arg:
         tmp_call_name, tmp_call_offset = emit_function_call(arg["Call"], context=context)
-        #lines.append(f"\t# PushParam {tmp_call_name}")
-        emit_push_param(lines, tmp_call_offset, tmp_call_name)
+        return tmp_call_name, tmp_call_offset
 
     elif "RelationalExpr" in arg:
         tmp_relop = emit_relop_expression(arg, context)
         tmp_offset = context["temp_locations"][tmp_relop]
-        #lines.append(f"\t# PushParam {tmp_relop}")
-        emit_push_param(lines, tmp_offset, tmp_relop)
-    
+        return tmp_relop, tmp_offset
+
     elif "LogicalExpr" in arg:
         tmp_logic = emit_logical_expression(arg, context)
         tmp_offset = context["temp_locations"][tmp_logic]
-
-        #lines.append(f"\t# PushParam {tmp_logic}")
-        emit_push_param(lines, tmp_offset, tmp_logic)
+        return tmp_logic, tmp_offset
 
     else:
         print(f"WARNING: Complex function call argument not handled: {arg}")
+        return None, None
 
 def emit_print_statement(print_stmt, context):
     lines = context["lines"]
