@@ -237,7 +237,7 @@ def emit_assign_expression(assign_node, context):
         op = arith["operator"]
 
         right_is_const = "IntConstant" in right
-
+    
         if right_is_const:
             const_val = int(right["IntConstant"]["value"])
             tmp_const_name, tmp_const_offset = allocate_temp(context)

@@ -738,8 +738,6 @@ def check_print_statement(print_stmt, tokens, scope_name):
                 else:
                     token = start_tok or find_token_on_line(tokens, line, match_text=match_text)
 
-
-
             errors.append(semantic_error(
                 tokens,
                 token,

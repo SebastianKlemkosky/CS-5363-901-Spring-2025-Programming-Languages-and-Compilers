@@ -35,7 +35,7 @@ def write_combined_asm_file(defs_path, compiled_output, combined_output_path):
         out_file.write(combined)
 
 def run_and_concat():
-    file_path = r"pp3-post\samples\t4.decaf"
+    file_path = r"pp3-post\samples\test.decaf"
     output_path = r"pp3-post\program.s"
     combined_path = r"pp3-post\final.s"  # for SPIM
 
@@ -46,7 +46,7 @@ def run_and_concat():
     if isinstance(ast_output, str):
         output = ast_output
     else:
-        #pprint.pprint(ast_output)
+        pprint.pprint(ast_output)
         semantic_errors = check_semantics(ast_output, tokens)
 
         if semantic_errors:
@@ -91,4 +91,4 @@ def main():
     print(output)
 
 if __name__ == "__main__":
-    main()
+    run_and_concat()

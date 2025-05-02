@@ -1,15 +1,21 @@
+double Pi() {
+    return 3.14159;
+}
+
+double Multiply(double x, double y) {
+    return x * y;
+}
+
 void main() {
-    int i;
-    i = 0;
+    double a;
+    double b;
+    double result;
 
-    while (i < 10) {
-        if (i == 5) {
-            break;
-        }
-        Print(i, "\n");
-        i = i + 1;
-    }
+    a = Pi();
+    b = 2.0;
+    result = Multiply(a, b);
 
-    Print(100, "\n");  // Confirm we broke correctly
+    // These Print calls use only supported types (int + string)
+    Print(1, " done.\n");
 }
 

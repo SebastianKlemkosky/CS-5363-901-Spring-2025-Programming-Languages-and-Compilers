@@ -1,15 +1,7 @@
 void main() {
-    int i;
-    i = 0;
-
-    while (i < 10) {
-        if (i == 5) {
-            break;
-        }
-        Print(i, "\n");
-        i = i + 1;
-    }
-
-    Print(100, "\n");  // Confirm we broke correctly
+    double pi;
+    pi = 3.14159;
+    Print(pi, "\n");
 }
+
 
